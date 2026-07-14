@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MedRoute Triage Report</title>
+<style>
+  /* ================================================================
+     MedRoute PDF Report — matches frontend design system
+     Warm monochrome, 1px borders, pastel badges, editorial type
+     ================================================================ */
+
+  @page {
+    size: A4;
+    margin: 1.8cm 2cm;
+    @bottom-center {
+      content: "MedRoute AI — Not a substitute for clinical judgment";
+      font-family: 'Helvetica Neue', 'Arial', sans-serif;
+      font-size: 8pt;
+      color: #A09E9A;
+    }
+  }
+
+  body {
+    font-family: 'Helvetica Neue', 'Arial', sans-serif;
+    font-size: 10pt;
+    color: #1A1A18;
+    line-height: 1.55;
+  }
+
+  /* ================================================================
+     Header
+     ================================================================ */
+
+  .report-header {
+    text-align: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #DCDCDA;
+    margin-bottom: 20px;
+  }
+
+  .report-header h1 {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 22pt;
+    font-weight: 600;
+    color: #1A1A18;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.03em;
+  }
+
+  .report-header .subtitle {
+    font-family: 'Courier New', monospace;
+    font-size: 8pt;
+    color: #A09E9A;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* ================================================================
+     Urgent Banner
+     ================================================================ */
+
+  .urgent-banner {
+    background: #FDEBEC;
+    color: #9F2F2D;
+    border: 1px solid #F5C6CB;
+    border-radius: 4px;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 11pt;
+    text-align: center;
+    margin-bottom: 16px;
+  }
+
+  /* ================================================================
+     Confidence Badge
+     ================================================================ */
+
+  .badge {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 99px;
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .badge-green { background: #EAF3E8; color: #346538; }
+  .badge-yellow { background: #FBF3DB; color: #956400; }
+  .badge-red { background: #FDEBEC; color: #9F2F2D; }
+
+  /* ================================================================
+     Patient Summary
+     ================================================================ */
+
+  .patient-summary {
+    background: #F4F4F2;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+  }
+
+  .patient-summary table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .patient-summary td {
+    padding: 2px 12px;
+    font-size: 9pt;
+  }
+
+  .patient-summary td:first-child {
+    font-size: 8pt;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #A09E9A;
+    width: 80px;
+  }
+
+  .patient-summary td:last-child {
+    font-weight: 500;
+    color: #1A1A18;
+  }
+
+  /* ================================================================
+     Content Sections
+     ================================================================ */
+
+  .section {
+    margin-top: 18px;
+  }
+
+  .section h3 {
+    font-size: 8pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #A09E9A;
+    margin: 0 0 6px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+  }
+
+  .section p {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 10.5pt;
+    color: #1A1A18;
+    margin: 0 0 4px 0;
+    line-height: 1.5;
+  }
+
+  .section ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .section ul li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+    font-size: 9.5pt;
+    color: #787774;
+  }
+
+  .section ul li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 7px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #A09E9A;
+  }
+
+  /* ================================================================
+     Red Flag Detail
+     ================================================================ */
+
+  .red-flag-detail {
+    background: #FDEBEC;
+    border: 1px solid #F5C6CB;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+
+  .red-flag-detail h3 {
+    color: #9F2F2D;
+    font-size: 9pt;
+    margin-bottom: 4px;
+    border: none;
+    padding: 0;
+  }
+
+  .red-flag-detail p {
+    color: #9F2F2D;
+    font-size: 9pt;
+    font-family: 'Helvetica Neue', 'Arial', sans-serif;
+  }
+
+  /* ================================================================
+     Reasoning
+     ================================================================ */
+
+  .reasoning {
+    font-family: 'Courier New', monospace;
+    font-size: 8pt;
+    color: #A09E9A;
+    background: #F4F4F2;
+    padding: 8px 10px;
+    border-radius: 4px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ================================================================
+     Evidence
+     ================================================================ */
+
+  .evidence-item {
+    font-size: 8.5pt;
+    color: #787774;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(0,0,0,0.04);
+  }
+
+  .evidence-item:last-child {
+    border-bottom: none;
+  }
+
+  /* ================================================================
+     Footer
+     ================================================================ */
+
+  .report-footer {
+    margin-top: 28px;
+    padding-top: 12px;
+    border-top: 1px solid #DCDCDA;
+    text-align: center;
+    font-size: 7.5pt;
+    color: #A09E9A;
+  }
+</style>
+</head>
+<body>
+
+<div class="report-header">
+  <h1>MedRoute</h1>
+  <p class="subtitle">Medical Triage Report</p>
+</div>
+
+{% if is_red_flag %}
+<div class="urgent-banner">
+  Hard Red-Flag Override — Urgent clinician referral required
+</div>
+{% endif %}
+
+<div class="badge {{ badge_class }}">
+  Confidence: {{ result.confidence_level.value | upper }} ({{ "%.0f"|format(result.confidence * 100) }}%)
+</div>
+
+<div class="patient-summary">
+  <table>
+    <tr>
+      <td>Age</td>
+      <td>{{ patient.age_for_display }}</td>
+    </tr>
+    <tr>
+      <td>Pregnancy</td>
+      <td>{{ patient.pregnancy.value | replace("_", " ") }}</td>
+    </tr>
+    <tr>
+      <td>Route</td>
+      <td>{{ result.route.value | replace("_", " ") }}</td>
+    </tr>
+    <tr>
+      <td>Urgency</td>
+      <td>{{ result.urgency.value | replace("_", " ") | title }}</td>
+    </tr>
+    {% if result.cascade_used %}
+    <tr>
+      <td>Cascade</td>
+      <td>{{ result.cascade_used | join(" → ") }}</td>
+    </tr>
+    {% endif %}
+  </table>
+</div>
+
+{% if result.red_flag and result.red_flag.triggered %}
+<div class="red-flag-detail">
+  <h3>{{ result.red_flag.flag_class | replace("_", " ") | title }}</h3>
+  <p>{{ result.red_flag.message }}</p>
+</div>
+{% endif %}
+
+<div class="section">
+  <h3>Likely Condition</h3>
+  <p>{{ result.likely_condition }}</p>
+</div>
+
+{% if result.differential %}
+<div class="section">
+  <h3>Differential Diagnosis</h3>
+  <ul>
+  {% for d in result.differential %}
+    <li>{{ d }}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="section">
+  <h3>Recommendation</h3>
+  <p>{{ result.recommendation }}</p>
+</div>
+
+{% if result.watch_for %}
+<div class="section">
+  <h3>Watch For</h3>
+  <ul>
+  {% for w in result.watch_for %}
+    <li>{{ w }}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if result.rag_evidence %}
+<div class="section">
+  <h3>Evidence Retrieved</h3>
+  {% for e in result.rag_evidence %}
+  <div class="evidence-item">{{ e[:250] }}{% if e|length > 250 %}...{% endif %}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="section">
+  <h3>Clinical Reasoning</h3>
+  <div class="reasoning">{{ result.reasoning }}</div>
+</div>
+
+<div class="report-footer">
+  Generated by MedRoute AI — Always verify with a qualified healthcare professional.
+</div>
+
+</body>
+</html>
