@@ -3,7 +3,7 @@
 Architecture (research-aligned: CLARITY FSM + MDAgents complexity routing):
   1. Hard red flags already handled upstream — this module never second-guesses them
   2. Route from Complexity Scorer selects a fixed tool plan (not free-form agent choice)
-  3. Cascade on failure: local → remote → heuristics → escalate_uncertain
+  3. Cascade on failure: OpenRouter → heuristics → clinician escalation
   4. Confidence is fused: min/blend of scorer confidence and model self-report
   5. RAG evidence is always attached when retrieved
 
@@ -12,6 +12,7 @@ Why not pure ReAct for routing?
   Safety-critical triage needs deterministic control flow; LLMs fill the diagnosis
   slot, not the routing policy.
 """
+
 from __future__ import annotations
 
 import json
@@ -21,9 +22,8 @@ from typing import Any, Optional
 
 from agents.clinical_heuristics import heuristic_assessment
 from agents.tools.escalate_uncertain import escalate_uncertain
-from agents.tools.local_infer import local_infer
+from agents.tools.openrouter_infer import openrouter_infer
 from agents.tools.rag_search import rag_search
-from agents.tools.remote_infer import remote_infer
 from config import settings
 from models import (
     ConfidenceLevel,
@@ -54,11 +54,11 @@ def _extract_json(text: str) -> dict:
     matches = list(re.finditer(r"\{", text))
     for m in reversed(matches):
         try:
-            candidate = text[m.start():]
+            candidate = text[m.start() :]
             end = candidate.rfind("}")
             if end == -1:
                 continue
-            data = json.loads(candidate[:end + 1])
+            data = json.loads(candidate[: end + 1])
             if isinstance(data, dict):
                 return data
         except json.JSONDecodeError:
@@ -112,9 +112,9 @@ def _patient_context_str(parsed: ParsedInput) -> str:
 
 def _is_unavailable(data: dict) -> bool:
     status = str(data.get("status", "")).lower()
-    if status in ("local_unavailable", "remote_unavailable", "error"):
+    if status in ("model_unavailable", "error"):
         return True
-    if data.get("action") in ("fallback_to_remote", "refer_to_clinician"):
+    if data.get("action") == "refer_to_clinician":
         return True
     if not data.get("likely_condition") and data.get("escalation"):
         return True
@@ -166,7 +166,10 @@ def _fuse_confidence(
     else:
         model_conf = max(0.0, min(float(model_conf), 1.0))
         # If either side is low, take the lower (safety)
-        if model_conf < settings.confidence_medium or scorer_conf < settings.confidence_medium:
+        if (
+            model_conf < settings.confidence_medium
+            or scorer_conf < settings.confidence_medium
+        ):
             final = min(scorer_conf, model_conf)
         else:
             # Both reasonably confident — blend, allow modest lift toward agreement
@@ -198,9 +201,13 @@ def _normalize_diagnosis(data: dict) -> dict:
             conf = None
 
     return {
-        "likely_condition": str(data.get("likely_condition") or data.get("diagnosis") or "").strip(),
+        "likely_condition": str(
+            data.get("likely_condition") or data.get("diagnosis") or ""
+        ).strip(),
         "differential": [str(x) for x in differential][:5],
-        "recommendation": str(data.get("recommendation") or data.get("message") or "").strip(),
+        "recommendation": str(
+            data.get("recommendation") or data.get("message") or ""
+        ).strip(),
         "watch_for": [str(x) for x in watch][:6],
         "confidence": conf,
         "urgency": data.get("urgency"),
@@ -210,16 +217,16 @@ def _normalize_diagnosis(data: dict) -> dict:
 def _plan_for_route(route: TriageRoute) -> list[str]:
     """Fixed tool plans — the routing policy is code, not the LLM."""
     if route == TriageRoute.LOCAL_ONLY:
-        return ["local"]
-    if route == TriageRoute.LOCAL_WITH_RAG:
-        return ["rag", "local"]
-    if route == TriageRoute.REMOTE:
-        return ["rag", "remote"]
-    if route == TriageRoute.ESCALATION_BIAS:
-        return ["rag", "remote", "local"]
+        return ["openrouter"]
+    if route in (
+        TriageRoute.LOCAL_WITH_RAG,
+        TriageRoute.REMOTE,
+        TriageRoute.ESCALATION_BIAS,
+    ):
+        return ["rag", "openrouter"]
     if route == TriageRoute.OUTAGE_FALLBACK:
-        return ["local", "heuristic", "escalate"]
-    return ["rag", "local", "remote"]
+        return ["heuristic", "escalate"]
+    return ["rag", "openrouter"]
 
 
 def run_triage(
@@ -264,29 +271,16 @@ def run_triage(
                 cascade.append(f"rag_hits={len(rag_evidence)}")
             continue
 
-        if step == "local":
-            cascade.append("local_infer")
+        if step == "openrouter":
+            cascade.append("openrouter_infer")
             payload = context
             if rag_evidence:
-                payload += "\n\nEvidence from guidelines:\n" + "\n".join(rag_evidence[:3])
-            data = _tool_json(local_infer, payload)
+                payload += "\n\nEvidence from guidelines:\n" + "\n".join(
+                    rag_evidence[:3]
+                )
+            data = _tool_json(openrouter_infer, payload)
             if _is_unavailable(data):
-                cascade.append("local_failed")
-                continue
-            diagnosis = _normalize_diagnosis(data)
-            if diagnosis["likely_condition"]:
-                break
-            diagnosis = None
-            continue
-
-        if step == "remote":
-            cascade.append("remote_infer")
-            payload = context
-            if rag_evidence:
-                payload += "\n\nEvidence from guidelines:\n" + "\n".join(rag_evidence[:3])
-            data = _tool_json(remote_infer, payload)
-            if _is_unavailable(data):
-                cascade.append("remote_failed")
+                cascade.append("openrouter_failed")
                 final_route = TriageRoute.OUTAGE_FALLBACK
                 continue
             diagnosis = _normalize_diagnosis(data)
@@ -303,14 +297,18 @@ def run_triage(
         if step == "escalate":
             cascade.append("escalate_uncertain")
             data = _tool_json(escalate_uncertain, context)
-            diagnosis = _normalize_diagnosis({
-                "likely_condition": "Escalated — insufficient automated confidence",
-                "differential": [],
-                "recommendation": data.get("message", "Direct clinical interview required."),
-                "watch_for": [],
-                "confidence": 0.3,
-                "urgency": UrgencyLevel.URGENT.value,
-            })
+            diagnosis = _normalize_diagnosis(
+                {
+                    "likely_condition": "Escalated — insufficient automated confidence",
+                    "differential": [],
+                    "recommendation": data.get(
+                        "message", "Direct clinical interview required."
+                    ),
+                    "watch_for": [],
+                    "confidence": 0.3,
+                    "urgency": UrgencyLevel.URGENT.value,
+                }
+            )
             final_route = TriageRoute.OUTAGE_FALLBACK
             break
 
@@ -318,13 +316,11 @@ def run_triage(
     if diagnosis is None or not diagnosis.get("likely_condition"):
         cascade.append("heuristic_fallback")
         diagnosis = _normalize_diagnosis(heuristic_assessment(parsed))
-        # Distinguish outage (remote required but down) vs low-confidence escalation
-        if score.route == TriageRoute.REMOTE and "remote_failed" in cascade:
+        # Distinguish provider outage from low-confidence escalation.
+        if "openrouter_failed" in cascade:
             final_route = TriageRoute.OUTAGE_FALLBACK
         elif score.route == TriageRoute.ESCALATION_BIAS:
             final_route = TriageRoute.ESCALATION_BIAS
-        elif "local_failed" in cascade and "remote_failed" in cascade:
-            final_route = TriageRoute.OUTAGE_FALLBACK
         else:
             # Keep original route (e.g. local_only → heuristics still local path)
             final_route = score.route
@@ -335,9 +331,13 @@ def run_triage(
 
     # Vague / escalation-bias cases: force clinician-facing recommendation tone
     recommendation = diagnosis.get("recommendation") or ""
-    if final_route == TriageRoute.ESCALATION_BIAS and "clinician" not in recommendation.lower():
+    if (
+        final_route == TriageRoute.ESCALATION_BIAS
+        and "clinician" not in recommendation.lower()
+    ):
         recommendation = (
-            recommendation + " Automated confidence is low — clinician confirmation required."
+            recommendation
+            + " Automated confidence is low — clinician confirmation required."
         ).strip()
 
     reasoning = (

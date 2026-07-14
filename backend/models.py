@@ -1,4 +1,5 @@
 """Shared data models for the MedRoute pipeline."""
+
 from __future__ import annotations
 
 from enum import Enum
@@ -34,7 +35,7 @@ class ParsedInput(BaseModel):
     """Output of Stage 1 (Input Parser)."""
 
     transcript: str
-    language: str = "unknown"  # e.g. hi-IN, auto-detected by Nemotron
+    language: str = "unknown"  # e.g. ur, hi, en; detected or user-supplied
     symptoms: list[str] = Field(default_factory=list)
     patient: PatientContext = Field(default_factory=PatientContext)
     symptom_clusters: list[str] = Field(default_factory=list)
@@ -50,12 +51,13 @@ class RedFlagResult(BaseModel):
 
 
 class TriageRoute(str, Enum):
-    HARD_ESCALATION = "hard_escalation"          # red flag, no LLM
-    LOCAL_ONLY = "local_only"                    # Hippo-Mistral-7B
-    LOCAL_WITH_RAG = "local_with_rag"            # Hippo + EmbeddingGemma RAG
-    REMOTE = "remote"                            # DeepSeek V4
-    OUTAGE_FALLBACK = "outage_fallback"          # Fireworks down -> clinician
-    ESCALATION_BIAS = "escalation_bias"          # low confidence, re-route up
+    HARD_ESCALATION = "hard_escalation"  # red flag, no LLM
+    # Values are retained for API compatibility; inference now uses OpenRouter.
+    LOCAL_ONLY = "local_only"  # direct model inference
+    LOCAL_WITH_RAG = "local_with_rag"  # model + retrieved evidence
+    REMOTE = "remote"  # complex-case model inference
+    OUTAGE_FALLBACK = "outage_fallback"  # provider down -> safe fallback
+    ESCALATION_BIAS = "escalation_bias"  # low confidence, re-route up
 
 
 class TriageScore(BaseModel):
@@ -73,16 +75,16 @@ class TriageScore(BaseModel):
 
 
 class ConfidenceLevel(str, Enum):
-    GREEN = "green"    # > 0.80
+    GREEN = "green"  # > 0.80
     YELLOW = "yellow"  # 0.65 - 0.80
-    RED = "red"        # < 0.65
+    RED = "red"  # < 0.65
 
 
 class UrgencyLevel(str, Enum):
-    EMERGENCY = "emergency"      # immediate care / ED
-    URGENT = "urgent"            # same-day clinician
-    SOON = "soon"                # within 24–48h
-    ROUTINE = "routine"          # primary care / self-care guidance
+    EMERGENCY = "emergency"  # immediate care / ED
+    URGENT = "urgent"  # same-day clinician
+    SOON = "soon"  # within 24–48h
+    ROUTINE = "routine"  # primary care / self-care guidance
 
 
 class TriageResult(BaseModel):
