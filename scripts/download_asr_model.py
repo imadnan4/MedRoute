@@ -1,25 +1,21 @@
 #!/usr/bin/env python
-"""Download the Nemotron 3.5 ASR ONNX INT4 model for local inference.
+"""Download and initialize the configured faster-whisper ASR model."""
 
-The model is ~300MB and runs entirely on CPU. Downloaded once, cached forever.
-
-Usage:
-    python scripts/download_asr_model.py
-"""
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from voice.nemotron_local import _ensure_model, DEFAULT_MODEL_DIR
+from config import settings
+from voice.whisper_local import get_local_asr
 
-print("Downloading Nemotron 3.5 ASR ONNX INT4 model (~300MB)...")
-print("This is a one-time download. The model runs on CPU - no GPU needed.")
+print(f"Downloading Whisper ASR model: {settings.asr_model}")
+print(f"Cache directory: {settings.asr_cache_dir}")
+print("The first download is large; subsequent starts use the local cache.")
 print()
 
-path = _ensure_model(DEFAULT_MODEL_DIR)
+get_local_asr().ensure_model()
 
 print()
-print(f"Model ready at {path}")
-print("You can now use voice transcription locally.")
-print("Try: curl -X POST http://localhost:8000/transcribe")
+print("Whisper ASR is ready.")
+print("Use the browser voice recorder or POST audio to /transcribe.")

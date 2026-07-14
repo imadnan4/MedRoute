@@ -12,13 +12,20 @@ Design goals (aligned with MDAgents / CLARITY-style hybrid triage):
 
 Deterministic — no LLM.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 
 from config import settings
-from models import ParsedInput, PatientContext, PregnancyStatus, TriageRoute, TriageScore
+from models import (
+    ParsedInput,
+    PatientContext,
+    PregnancyStatus,
+    TriageRoute,
+    TriageScore,
+)
 
 log = logging.getLogger(__name__)
 
@@ -67,8 +74,8 @@ SYMPTOM_COUNT_BONUS = {
 
 # Syndrome cluster bonuses — multi-symptom patterns that raise diagnostic complexity
 CLUSTER_BONUS = {
-    "viral_uri": 0,          # common, low complexity
-    "b_symptoms": 3,         # lymphoma/TB/HIV workup territory
+    "viral_uri": 0,  # common, low complexity
+    "b_symptoms": 3,  # lymphoma/TB/HIV workup territory
     "acs_constellation": 2,  # even if red-flag didn't fire, escalate compute
     "gi_illness": 1,
     "neuro_acute": 3,
@@ -133,7 +140,9 @@ def _compute_context_offset(patient: PatientContext) -> _ContextOffsets:
     return offsets
 
 
-def _calculate_confidence(symptoms: list[str], clusters: list[str], patient: PatientContext) -> tuple[float, float]:
+def _calculate_confidence(
+    symptoms: list[str], clusters: list[str], patient: PatientContext
+) -> tuple[float, float]:
     """Calibrated confidence based on specificity, count, and vagueness.
 
     Returns (confidence, vagueness_penalty).
@@ -151,7 +160,8 @@ def _calculate_confidence(symptoms: list[str], clusters: list[str], patient: Pat
 
     # Clear primary-care URI pattern is high-confidence when no red-cluster noise
     if "viral_uri" in clusters and not (
-        set(clusters) & {"b_symptoms", "acs_constellation", "neuro_acute", "respiratory_distress"}
+        set(clusters)
+        & {"b_symptoms", "acs_constellation", "neuro_acute", "respiratory_distress"}
     ):
         conf += 0.12
 
@@ -168,7 +178,11 @@ def _calculate_confidence(symptoms: list[str], clusters: list[str], patient: Pat
         vagueness = 0.25
     elif set(symptoms).issubset(VAGUE_SYMPTOMS):
         vagueness = 0.20
-    elif len(symptoms) == 1 and symptoms[0] in VAGUE_SYMPTOMS | {"fatigue", "dizziness", "headache"}:
+    elif len(symptoms) == 1 and symptoms[0] in VAGUE_SYMPTOMS | {
+        "fatigue",
+        "dizziness",
+        "headache",
+    }:
         vagueness = 0.12
 
     # Unknown age is incomplete intake → mild penalty
@@ -179,7 +193,9 @@ def _calculate_confidence(symptoms: list[str], clusters: list[str], patient: Pat
     return max(0.15, min(conf, 0.95)), vagueness
 
 
-def _raw_complexity(symptoms: list[str], clusters: list[str], patient: PatientContext) -> int:
+def _raw_complexity(
+    symptoms: list[str], clusters: list[str], patient: PatientContext
+) -> int:
     """Sum of symptom weights + count bonus + cluster bonus + chronicity."""
     if not symptoms:
         # Underspecified case — mid-low raw score; confidence bias will escalate
@@ -189,26 +205,52 @@ def _raw_complexity(symptoms: list[str], clusters: list[str], patient: PatientCo
     bonus = SYMPTOM_COUNT_BONUS.get(len(symptoms), 4)
     cluster_extra = sum(CLUSTER_BONUS.get(c, 0) for c in clusters)
 
+    # Multiple coherent URI symptoms add diagnostic signal, not complexity.
+    uncomplicated_uri_symptoms = {
+        "fever",
+        "cough",
+        "cold",
+        "headache",
+        "sore_throat",
+    }
+    serious_clusters = {
+        "b_symptoms",
+        "acs_constellation",
+        "neuro_acute",
+        "respiratory_distress",
+    }
+    if (
+        "viral_uri" in clusters
+        and set(symptoms).issubset(uncomplicated_uri_symptoms)
+        and not set(clusters) & serious_clusters
+    ):
+        return min(base + bonus, settings.local_only_max_complexity)
+
     # Chronicity: multi-week systemic symptoms raise complexity
     chronicity = 0
     if patient.duration_days is not None and patient.duration_days >= 21:
-        if any(s in symptoms for s in ("weight_loss", "night_sweats", "fatigue", "lymph_node_swelling")):
+        if any(
+            s in symptoms
+            for s in ("weight_loss", "night_sweats", "fatigue", "lymph_node_swelling")
+        ):
             chronicity = 1
 
     return min(base + bonus + cluster_extra + chronicity, 9)
 
 
-def _determine_route(adjusted_score: int, confidence: float) -> tuple[TriageRoute, int, bool]:
+def _determine_route(
+    adjusted_score: int, confidence: float
+) -> tuple[TriageRoute, int, bool]:
     """Map adjusted score + confidence to a routing decision.
 
     Returns (route, score_after_bias, bias_applied).
 
     Routing philosophy (complexity-aware orchestration):
-      score ≤3 + high conf  → local only (cheap, private)
-      score ≤6 + high conf  → local + RAG (grounded)
-      score ≥7              → remote frontier model
+      score ≤3 + high conf  → direct model inference
+      score ≤6 + high conf  → model + RAG evidence
+      score ≥7              → complex-case model inference + RAG
       low conf              → escalation bias (+2) then re-evaluate;
-                              if still mid-range → ESCALATION_BIAS (remote path)
+                              if still mid-range → ESCALATION_BIAS path
     """
     bias_applied = False
     score_after_bias = adjusted_score
@@ -216,9 +258,15 @@ def _determine_route(adjusted_score: int, confidence: float) -> tuple[TriageRout
         score_after_bias = min(adjusted_score + 2, 9)
         bias_applied = True
 
-    if score_after_bias <= settings.local_only_max_complexity and confidence >= settings.escalation_bias_threshold:
+    if (
+        score_after_bias <= settings.local_only_max_complexity
+        and confidence >= settings.escalation_bias_threshold
+    ):
         return TriageRoute.LOCAL_ONLY, score_after_bias, bias_applied
-    if score_after_bias <= settings.rag_max_complexity and confidence >= settings.escalation_bias_threshold:
+    if (
+        score_after_bias <= settings.rag_max_complexity
+        and confidence >= settings.escalation_bias_threshold
+    ):
         return TriageRoute.LOCAL_WITH_RAG, score_after_bias, bias_applied
     if score_after_bias >= settings.remote_min_complexity:
         return TriageRoute.REMOTE, score_after_bias, bias_applied
@@ -237,7 +285,9 @@ def score_complexity(parsed: ParsedInput) -> TriageScore:
 
     raw = _raw_complexity(parsed.symptoms, clusters, parsed.patient)
     adjusted = min(raw + context_total, 9)
-    confidence, vagueness = _calculate_confidence(parsed.symptoms, clusters, parsed.patient)
+    confidence, vagueness = _calculate_confidence(
+        parsed.symptoms, clusters, parsed.patient
+    )
 
     route, final_score, bias_applied = _determine_route(adjusted, confidence)
 
