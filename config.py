@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,27 +13,26 @@ class Settings(BaseSettings):
     )
 
     # — Models
-    asr_model: str = "nvidia/nemotron-3.5-asr-streaming-0.6b"
-    local_llm: str = "emrecanacikgoz/hippomistral"
-    local_llm_ollama_name: str = "hippomistral"
-    embed_model: str = "sentence-transformers/embeddinggemma-300m-medical"
-    remote_llm: str = "accounts/fireworks/models/deepseek-v4"
+    asr_model: str = "large-v3-turbo"
+    embed_model: str = "all-MiniLM-L6-v2"
 
-    # — AMD Developer Cloud endpoints
-    ollama_base_url: str = "http://localhost:11434"
+    # — Hosted inference (OpenRouter's free router is intended for testing)
+    openrouter_api_key: str = ""
+    openrouter_model: str = "openrouter/free"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_timeout: float = 60.0
+    openrouter_max_attempts: int = 2
+    openrouter_site_url: str = ""
+
+    # — Optional remote ASR endpoint
     asr_server_url: str = ""
-    # auto | local | remote — auto prefers local ONNX when model is cached
+    # auto | local | remote | hf — hf uses HuggingFace hosted Inference API (no local GPU/RAM)
     asr_mode: str = "auto"
-
-    # — Together AI (Nemotron 3.5 ASR hosted, fallback)
-    together_api_key: str = ""
+    # Model to use on HuggingFace Inference API when asr_mode=hf
+    hf_asr_model: str = "openai/whisper-large-v3"
 
     # — HuggingFace (optional, speeds up model downloads)
     hf_token: str = ""
-
-    # — Fireworks
-    fireworks_api_key: str = ""
-    fireworks_timeout: float = 30.0
 
     # — Routing thresholds
     escalation_bias_threshold: float = 0.65
@@ -50,7 +50,10 @@ class Settings(BaseSettings):
     pregnancy_3rd_trimester_offset: int = 3
 
     # — ASR
-    asr_chunk_ms: int = 160
+    asr_device: str = "auto"  # auto | cpu | cuda
+    asr_compute_type: str = "auto"  # auto | int8 | float16 | float32
+    asr_beam_size: int = 5
+    asr_cache_dir: str = str(Path.home() / ".cache" / "medroute" / "whisper")
 
     # — RAG (path resolved relative to project root, not CWD)
     chroma_path: str = str(Path(__file__).resolve().parent.parent / "data" / "chroma")

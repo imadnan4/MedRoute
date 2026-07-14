@@ -4,28 +4,34 @@ Exposes the full triage pipeline as REST + SSE endpoints. One POST endpoint
 runs the complete pipeline synchronously; a GET SSE endpoint streams progress
 updates for a real-time UX.
 """
+
 from __future__ import annotations
 
 import base64
 import json
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
+from agents.triage_agent import run_triage
+from config import settings
+
+# Propagate HuggingFace token to env so all downstream libs (sentence-transformers,
+# huggingface_hub, chromadb embedding functions) can use it for model downloads.
+if settings.hf_token and not os.environ.get("HF_TOKEN"):
+    os.environ["HF_TOKEN"] = settings.hf_token
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
-
-from agents.triage_agent import run_triage
-from config import settings
 from models import TriageResult, TriageRoute
 from pipeline.complexity_scorer import score_complexity
 from pipeline.input_parser import parse as parse_input
 from pipeline.report_generator import generate_pdf
+from pydantic import BaseModel, Field
 from rag.retriever import get_or_create_collection
 from safety.red_flag_checker import check_red_flags
 from voice.transcriber import Transcript, transcriber
@@ -45,9 +51,15 @@ _triage_store: dict[str, dict] = {}
 class TriageRequest(BaseModel):
     transcript: str = Field(..., description="Patient voice transcript or typed input")
     language: str = Field("hi-IN", description="Language locale tag")
-    audio_b64: Optional[str] = Field(None, description="Base64-encoded audio bytes (optional)")
-    age_years: Optional[float] = Field(None, description="Patient age in years (optional if in transcript)")
-    age_months: Optional[float] = Field(None, description="Patient age in months (optional if in transcript)")
+    audio_b64: Optional[str] = Field(
+        None, description="Base64-encoded audio bytes (optional)"
+    )
+    age_years: Optional[float] = Field(
+        None, description="Patient age in years (optional if in transcript)"
+    )
+    age_months: Optional[float] = Field(
+        None, description="Patient age in months (optional if in transcript)"
+    )
     pregnancy: Optional[str] = Field(
         None,
         description="Pregnancy status: not_pregnant, pregnant, pregnant_3rd_trimester",
@@ -93,7 +105,9 @@ app.add_middleware(
 )
 
 
-def _apply_context_overrides(transcript_text: str, language: str, req: TriageRequest) -> Transcript:
+def _apply_context_overrides(
+    transcript_text: str, language: str, req: TriageRequest
+) -> Transcript:
     """Merge explicit age/pregnancy fields into the transcript for the parser."""
     if req.age_years is None and req.age_months is None and req.pregnancy is None:
         return Transcript(text=transcript_text, language=language, latency_ms=0)
@@ -126,10 +140,16 @@ def run_pipeline(request: TriageRequest, case_id: str) -> dict:
                 "language": transcript.language,
                 "latency_ms": transcript.latency_ms,
             }
-            log.info("ASR transcribed %d chars in %dms", len(transcript.text), transcript.latency_ms)
+            log.info(
+                "ASR transcribed %d chars in %dms",
+                len(transcript.text),
+                transcript.latency_ms,
+            )
         except Exception as exc:
             log.warning("ASR failed, falling back to text input: %s", exc)
-            transcript = transcriber.transcribe_text(request.transcript, request.language)
+            transcript = transcriber.transcribe_text(
+                request.transcript, request.language
+            )
             stages["asr"] = {
                 "status": "completed",
                 "text": transcript.text,
@@ -315,12 +335,22 @@ async def triage_stream(
                 "pdf_bytes": None,
             }
 
-            yield _emit("done", "completed", {"case_id": case_id, "result": result.model_dump()})
+            yield _emit(
+                "done", "completed", {"case_id": case_id, "result": result.model_dump()}
+            )
 
         except Exception as exc:
             yield _emit("error", "error", {"message": str(exc)})
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/report/{case_id}")
@@ -339,7 +369,9 @@ async def get_report(case_id: str):
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=medroute_triage_{case_id[:8]}.pdf"},
+        headers={
+            "Content-Disposition": f"attachment; filename=medroute_triage_{case_id[:8]}.pdf"
+        },
     )
 
 
@@ -363,7 +395,7 @@ class TranscribeRequest(BaseModel):
 
 @app.post("/transcribe")
 async def transcribe_audio(req: TranscribeRequest):
-    """Transcribe audio via local Nemotron ONNX (preferred) or remote ASR server."""
+    """Transcribe audio via local Whisper (preferred) or a remote ASR server."""
     try:
         audio_bytes = base64.b64decode(req.audio_b64)
         result = transcriber.transcribe_bytes(audio_bytes, language=req.language)
@@ -383,4 +415,6 @@ async def transcribe_audio(req: TranscribeRequest):
 # ------------------------------------------------------------------ #
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+    app.mount(
+        "/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend"
+    )
