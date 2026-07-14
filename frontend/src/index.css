@@ -1,0 +1,654 @@
+/* ================================================================
+   MedRoute — Design System
+   Premium Utilitarian Minimalism + Warm Monochrome
+   ================================================================ */
+
+:root {
+  /* Canvas */
+  --bg-canvas: #FBFBFA;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F4F4F2;
+
+  /* Text */
+  --text-primary: #1A1A18;
+  --text-secondary: #787774;
+  --text-tertiary: #A09E9A;
+
+  /* Borders */
+  --border-default: #DCDCDA;
+  --border-hairline: rgba(0, 0, 0, 0.08);
+
+  /* Accents — desaturated pastels */
+  --accent-blue-bg: #E5F0FA;
+  --accent-blue-text: #1F6C9F;
+  --accent-green-bg: #EAF3E8;
+  --accent-green-text: #346538;
+  --accent-yellow-bg: #FBF3DB;
+  --accent-yellow-text: #956400;
+  --accent-red-bg: #FDEBEC;
+  --accent-red-text: #9F2F2D;
+
+  /* Typography */
+  --font-sans: 'Geist', 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
+  --font-serif: 'Newsreader', 'Lyon Text', 'Playfair Display', Georgia, serif;
+  --font-mono: 'Geist Mono', 'SF Mono', 'JetBrains Mono', monospace;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-2xl: 64px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 9999px;
+}
+
+/* ================================================================
+   Reset & Base
+   ================================================================ */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Skip navigation */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--text-primary);
+  color: var(--bg-canvas);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  z-index: 1000;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: var(--space-md);
+}
+
+/* ================================================================
+   Typography
+   ================================================================ */
+
+h1, h2, h3, h4 {
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  color: var(--text-primary);
+}
+
+h1 {
+  font-family: var(--font-serif);
+  font-size: 2.2rem;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+h2 {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+p {
+  color: var(--text-secondary);
+  max-width: 65ch;
+}
+
+/* ================================================================
+   Layout
+   ================================================================ */
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg) var(--space-2xl);
+  flex: 1;
+}
+
+/* ================================================================
+   Header
+   ================================================================ */
+
+.app-header {
+  text-align: center;
+  padding: var(--space-xl) 0 var(--space-lg);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--space-lg);
+}
+
+.app-header h1 {
+  margin-bottom: var(--space-xs);
+}
+
+.app-header .subtitle {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ================================================================
+   Sections
+   ================================================================ */
+
+.section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+/* ================================================================
+   Input
+   ================================================================ */
+
+.textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 10px var(--space-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  resize: vertical;
+  transition: border-color 200ms ease;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue-text);
+  box-shadow: 0 0 0 3px var(--accent-blue-bg);
+}
+
+.textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.input-field,
+.select-field {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  transition: border-color 200ms ease;
+}
+
+.input-field:focus,
+.select-field:focus {
+  outline: none;
+  border-color: var(--accent-blue-text);
+  box-shadow: 0 0 0 3px var(--accent-blue-bg);
+}
+
+.input-field:disabled,
+.select-field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ================================================================
+   Buttons
+   ================================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 200ms ease;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--text-primary);
+  color: var(--bg-canvas);
+  border-color: var(--text-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #33332F;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-outline {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.btn-outline:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-recording {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  border-color: var(--accent-red-bg);
+  font-weight: 500;
+}
+
+.btn-recording:hover:not(:disabled) {
+  background: #FBE4E5;
+}
+
+/* Record pulse */
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.btn-recording::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-red-text);
+  animation: record-pulse 1.5s ease-in-out infinite;
+}
+
+/* ================================================================
+   Confidence Badge
+   ================================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.badge-green {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.badge-yellow {
+  background: var(--accent-yellow-bg);
+  color: var(--accent-yellow-text);
+}
+
+.badge-red {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.badge-large {
+  font-size: 12px;
+  padding: 6px 14px;
+  margin-bottom: var(--space-sm);
+}
+
+/* ================================================================
+   Urgent Banner (Red Flag)
+   ================================================================ */
+
+.urgent-banner {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  padding: 10px var(--space-md);
+  border: 1px solid #F5C6CB;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.urgent-banner-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+/* ================================================================
+   Patient Summary
+   ================================================================ */
+
+.patient-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-sm);
+  padding: 10px var(--space-sm);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.patient-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.patient-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+.patient-field-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ================================================================
+   Triage Result
+   ================================================================ */
+
+.result-section {
+  animation: fadeIn 500ms ease;
+}
+
+.result-condition {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+}
+
+.result-block {
+  margin-top: var(--space-md);
+}
+
+.result-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-sm) 0;
+}
+
+.result-list li {
+  position: relative;
+  padding-left: 18px;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.result-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+.result-reasoning {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  background: var(--bg-subtle);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-sm);
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* ================================================================
+   Red Flag Detail
+   ================================================================ */
+
+.red-flag-detail {
+  background: var(--accent-red-bg);
+  border: 1px solid #F5C6CB;
+  border-radius: var(--radius-sm);
+  padding: 10px var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.red-flag-detail h3 {
+  color: var(--accent-red-text);
+  margin-bottom: var(--space-sm);
+}
+
+.red-flag-detail p {
+  color: var(--accent-red-text);
+  font-size: 14px;
+}
+
+/* ================================================================
+   Loading
+   ================================================================ */
+
+.loading-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-lg) 0;
+  gap: var(--space-sm);
+}
+
+.skeleton {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  animation: shimmer 1.6s infinite;
+  background-image: linear-gradient(
+    90deg,
+    var(--bg-subtle) 0%,
+    var(--bg-canvas) 40%,
+    var(--bg-subtle) 80%
+  );
+  background-size: 200% 100%;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-line {
+  height: 12px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.skeleton-line-short {
+  width: 60%;
+}
+
+.loading-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ================================================================
+   Error
+   ================================================================ */
+
+.error-section {
+  background: var(--accent-red-bg);
+  border: 1px solid #F5C6CB;
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.error-section h3 {
+  color: var(--accent-red-text);
+}
+
+.error-section p {
+  color: var(--accent-red-text);
+  font-size: 14px;
+}
+
+/* ================================================================
+   Report Download
+   ================================================================ */
+
+.report-download {
+  text-align: center;
+  padding: var(--space-md) 0;
+}
+
+/* ================================================================
+   Footer
+   ================================================================ */
+
+.app-footer {
+  text-align: center;
+  padding: var(--space-lg) 0 var(--space-md);
+  border-top: 1px solid var(--border-default);
+  margin-top: auto;
+}
+
+.app-footer p {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.03em;
+}
+
+/* ================================================================
+   Animations
+   ================================================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ================================================================
+   Responsive
+   ================================================================ */
+
+@media (max-width: 600px) {
+  .app {
+    padding: var(--space-sm) var(--space-sm) var(--space-lg);
+  }
+
+  .app-header {
+    padding: var(--space-md) 0;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  .input-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .input-row .btn {
+    grid-column: 1 / -1;
+  }
+}
