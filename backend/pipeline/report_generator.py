@@ -6,13 +6,14 @@ context, diagnosis, and recommendations. Uses Jinja2 + WeasyPrint.
 Styling matches the frontend: warm monochrome palette, Newsreader/Geist fonts,
 1px borders, pastel badges.
 """
+
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
-
 from models import ConfidenceLevel, TriageResult, TriageRoute
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ def generate_html(result: TriageResult) -> str:
         badge_class=_badge_class(result.confidence_level),
         is_red_flag=result.route == TriageRoute.HARD_ESCALATION,
         patient=result.patient,
+        report_date=datetime.now(timezone.utc).strftime("%d %B %Y · %H:%M UTC"),
     )
 
 
@@ -47,6 +49,7 @@ def generate_pdf(result: TriageResult) -> bytes:
     html = generate_html(result)
     try:
         from weasyprint import HTML
+
         pdf_bytes = HTML(string=html).write_pdf()
         return pdf_bytes
     except Exception as exc:

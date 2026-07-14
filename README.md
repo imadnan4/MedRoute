@@ -4,12 +4,12 @@ Intelligent Medical Triage and Routing Agent for Low-Resource Clinics
 
 AMD Developer Hackathon ACT II -- Track 3 (Unicorn Track)
 
-Voice-first, multilingual medical triage agent. Patients speak Urdu or Hindi; Nemotron 3.5 ASR transcribes locally on CPU via ONNX; a deterministic LangChain orchestrator reasons over symptoms with WHO-grounded RAG; routing resolves locally on AMD GPU (Hippo-Mistral-7B via Ollama) or escalates to DeepSeek V4 on Fireworks AI. Formal safety governance layer with 16 hard red-flag overrides runs before any LLM is invoked.
+Voice-first, multilingual medical triage agent. Patients speak Urdu, Hindi, or English; Whisper Large V3 Turbo transcribes locally with native Urdu support and Roman Urdu normalization; a deterministic LangChain orchestrator reasons over symptoms with WHO-grounded RAG; model inference uses OpenRouter's free-model router for low-cost testing. A formal safety governance layer with 16 hard red-flag overrides runs before any LLM is invoked.
 
 ## Architecture
 
 ```
-Voice Input --> Nemotron 3.5 ASR --> Input Parser (symptoms, clusters, duration)
+Voice Input --> Whisper Large V3 Turbo --> Input Parser (symptoms, clusters, duration)
                                          |
                                   Safety Pre-Check (16 hard red flags)
                                          |  (halt on match -> emergency)
@@ -21,14 +21,14 @@ Voice Input --> Nemotron 3.5 ASR --> Input Parser (symptoms, clusters, duration)
                 |  (routing policy is code, not free-form LLM) |
                 |                                              |
                 |  plan by route:                              |
-                |    local_only      -> local_infer            |
-                |    local_with_rag  -> rag -> local           |
-                |    remote          -> rag -> remote          |
-                |    escalation_bias -> rag -> remote -> local |
+                |    local_only      -> OpenRouter             |
+                |    local_with_rag  -> RAG -> OpenRouter      |
+                |    remote          -> RAG -> OpenRouter      |
+                |    escalation_bias -> RAG -> OpenRouter      |
                 |                                              |
                 |  cascade on failure:                         |
-                |    model down -> clinical heuristics ->      |
-                |    escalate_uncertain                        |
+                |    provider down -> clinical heuristics ->   |
+                |    clinician escalation                      |
                 |                                              |
                 |  confidence fusion: scorer (union) model     |
                 +----------------------------------------------+
@@ -38,7 +38,7 @@ Voice Input --> Nemotron 3.5 ASR --> Input Parser (symptoms, clusters, duration)
 
 **Design principles** (aligned with hybrid CDSS / CLARITY-style systems):
 - LLMs support diagnosis; **routing and safety are deterministic**
-- Complexity-aware compute: simple cases stay local, complex escalate remote
+- Complexity-aware grounding: simple cases call the model directly; complex cases add retrieved evidence
 - Conservative under uncertainty (escalation bias + confidence fusion)
 - Works offline: seed RAG + clinical heuristics when GPU/API unavailable
 
@@ -46,11 +46,11 @@ Voice Input --> Nemotron 3.5 ASR --> Input Parser (symptoms, clusters, duration)
 
 | Stage | Component | Description |
 |-------|-----------|-------------|
-| 0 | Voice Input | Nemotron 3.5 ASR (local ONNX INT4) transcribes Urdu/Hindi/English audio to text. Local-first with automatic remote fallback. |
+| 0 | Voice Input | Whisper Large V3 Turbo transcribes Urdu/Hindi/English audio locally through faster-whisper. Native Urdu script is normalized to Roman Urdu for the clinic UI. |
 | 1 | Input Parser | Extracts structured symptoms, symptom clusters, patient age, pregnancy status, and symptom duration from free-text transcript. Maps Urdu/Hindi terms via Roman Urdu transliteration and Devanagari script handling. |
 | 2 | Safety Pre-Check | 16 hard red-flag patterns checked against parsed input. Any match halts the pipeline immediately -- no LLM query. Covers ACS, FAST stroke, sepsis, anaphylaxis, PE, meningitis, SAH, DKA, GI bleed, seizure, suicide crisis, head trauma, obstetric emergency, infant fever, sick infant, and severe dehydration. |
 | 3 | Complexity Scorer | Scores the case on a 0-10+ scale with syndrome cluster matching, duration awareness, vagueness penalty, and patient context multipliers (age extremes, pregnancy). Outputs a recommended route and calibrated confidence. |
-| 4 | Deterministic Orchestrator | Executes a fixed tool plan based on the scored route. Cascades through local, remote, heuristics, and escalation paths on failure. Fuses scorer confidence with model self-reported confidence, preferring the lower value when they disagree. |
+| 4 | Deterministic Orchestrator | Executes a fixed tool plan based on the scored route. Uses OpenRouter directly for simple cases and adds RAG evidence for moderate/complex cases. Falls back to deterministic heuristics and clinician escalation when inference fails. |
 | 5 | Report Generation | Produces a structured PDF with condition, differential, recommendation, watch-for list, urgency level, confidence badge (Green/Yellow/Red), cascade audit trail, and RAG evidence citations. |
 
 ## Safety Layer
@@ -88,10 +88,9 @@ Key design decisions:
 
 | Model | Use | Hosting |
 |-------|-----|---------|
-| Nemotron 3.5 ASR 0.6B | Voice transcription (Urdu/Hindi/English) | Local CPU (ONNX INT4, ~760MB) |
-| Hippo-Mistral-7B | Local LLM inference | AMD GPU via Ollama |
-| EmbeddingGemma-300M Medical | RAG embeddings | AMD GPU via sentence-transformers |
-| DeepSeek V4 | Remote complex cases | Fireworks AI |
+| Whisper Large V3 Turbo | Conversational Urdu/Hindi/English transcription | Local CPU INT8 or NVIDIA CUDA via faster-whisper |
+| OpenRouter free router | Triage decision-support inference | OpenRouter (`openrouter/free`; model availability varies) |
+| EmbeddingGemma-300M Medical | Optional RAG embeddings | Local CPU/GPU via sentence-transformers |
 
 ## Tech Stack
 
@@ -100,9 +99,9 @@ Key design decisions:
 - LangChain agent framework with deterministic routing
 - ChromaDB vector store for medical guidelines RAG
 - WeasyPrint for PDF report generation
-- ONNX Runtime for local Nemotron ASR
+- faster-whisper for local multilingual ASR
 - Sentence-Transformers for medical embeddings
-- Indic transliteration for Urdu/Hindi text normalization
+- uroman + Indic transliteration for Roman Urdu/Hindi normalization
 
 **Frontend:**
 - React 19 with TypeScript
@@ -113,17 +112,14 @@ Key design decisions:
 
 ### Required for full pipeline:
 - **Python 3.11+** with uv package manager
-- **ffmpeg** for audio format conversion in local ASR
-- **Nemotron 3.5 ASR ONNX** (local CPU, one-time download ~760MB)
-- **Optional AMD GPU / cloud** for:
-  - Ollama with Hippo-Mistral-7B (local LLM inference)
-  - ChromaDB + EmbeddingGemma-300M Medical (RAG embeddings)
-  - Remote NeMo ASR server (only if not using local ONNX)
-- **Fireworks AI API key** for DeepSeek V4 (remote complex cases)
+- **Whisper Large V3 Turbo** (one-time local download; CPU INT8 supported, NVIDIA CUDA optional)
+- **OpenRouter API key** for live model inference (the default `openrouter/free` model is for testing)
+- **Optional CPU/GPU resources** for ChromaDB + EmbeddingGemma medical RAG embeddings
+- **Optional remote ASR server** (only when not using local Whisper)
 - **WHO ICD-11 API key** (optional, for RAG corpus loading)
 
 ### For testing without GPU:
-Parser, safety, scorer, cascade heuristics, PDF, and local voice ASR work offline after the ONNX model is cached. Live LLM diagnosis still needs Ollama and/or Fireworks.
+Parser, safety, scorer, seed retrieval, cascade heuristics, PDF, and local voice ASR work offline after the Whisper model is cached. Live model inference requires OpenRouter network access.
 
 ## Quick Start
 
@@ -148,7 +144,7 @@ uv venv --python 3.11
 source .venv/bin/activate
 uv pip install -r requirements.txt
 
-# One-time: download local Nemotron ASR (~760MB) for voice without a remote server
+# One-time: download local Whisper Large V3 Turbo
 python scripts/download_asr_model.py
 
 # Start the server
@@ -183,31 +179,21 @@ All configuration lives in `backend/.env`. Copy from `.env.example` and fill in:
 |----------|----------|-------------|
 | `MEDROUTE_ASR_MODE` | No (default `auto`) | `auto` / `local` / `remote` -- prefers local ONNX when model is cached |
 | `MEDROUTE_ASR_SERVER_URL` | Only if `remote` | Optional NeMo server (e.g. `http://AMD_IP:8080`) |
-| `MEDROUTE_OLLAMA_BASE_URL` | For local LLM | Ollama server URL (e.g. `http://AMD_IP:11434`) |
-| `MEDROUTE_FIREWORKS_API_KEY` | For remote inference | API key from fireworks.ai |
+| `MEDROUTE_OPENROUTER_API_KEY` | For live inference | API key from openrouter.ai |
+| `MEDROUTE_OPENROUTER_MODEL` | No (default `openrouter/free`) | OpenRouter model ID; use a specific `:free` model when reproducibility matters |
 | `MEDROUTE_ICD_API_KEY` | For RAG corpus | Free token from id.who.int |
 | `MEDROUTE_HF_TOKEN` | Optional | HuggingFace token for faster model downloads |
 
-### Setting up Ollama (Local LLM)
+### Setting up OpenRouter
 
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
+1. Create an API key at https://openrouter.ai/settings/keys.
+2. Set `MEDROUTE_OPENROUTER_API_KEY` in `backend/.env`.
+3. Keep `MEDROUTE_OPENROUTER_MODEL=openrouter/free` for testing, or pin a specific `:free` model for reproducible evaluation.
 
-# Pull the medical model
-ollama pull hippomistral
+Do not send real patient-identifiable data through free hosted models. Free-model providers and availability can change, and their data-handling policies may differ.
 
-# Verify it's running
-ollama list
-```
 
-### Setting up Fireworks AI (Remote LLM)
-
-1. Sign up at https://fireworks.ai
-2. Get your API key from the dashboard
-3. Set `MEDROUTE_FIREWORKS_API_KEY` in `backend/.env`
-
-### Loading the RAG Corpus (optional, requires GPU)
+### Loading the RAG Corpus (optional)
 
 ```bash
 cd backend
@@ -215,7 +201,7 @@ source .venv/bin/activate
 python -c "from rag.loader import load_all; load_all()"
 ```
 
-This downloads WHO ICD-11 definitions and Medical Meadow WikiDoc into ChromaDB.
+This downloads WHO ICD-11 definitions and Medical Meadow WikiDoc into ChromaDB. RAG is retained because it gives the model a small set of relevant, inspectable guideline passages instead of asking it to rely only on model memory. The built-in seed retriever remains available when ChromaDB is absent.
 
 ## API Endpoints
 
@@ -223,7 +209,7 @@ This downloads WHO ICD-11 definitions and Medical Meadow WikiDoc into ChromaDB.
 |--------|------|-------------|
 | POST | `/triage` | Run full triage pipeline (accepts text or base64 audio) |
 | GET | `/triage/stream` | SSE streaming pipeline stages with progress events |
-| POST | `/transcribe` | Transcribe audio via Nemotron 3.5 ASR (local ONNX or remote) |
+| POST | `/transcribe` | Transcribe audio via local Whisper or a configured remote ASR server |
 | GET | `/report/{case_id}` | Download PDF report for a previously run triage |
 | GET | `/health` | Health check with version info |
 
@@ -261,17 +247,17 @@ Events stream as: `asr -> parser -> safety -> scorer -> agent -> done`
 
 ## Demo Scenarios
 
-**A -- Simple Case (Local, Zero API Cost)**
+**A -- Simple Case (OpenRouter Free Model)**
 Input: "Mujhe do din se zukam, halka bukhar aur sar dard hai" (28yr, not pregnant)
-Expected: Local inference, GREEN confidence, viral URI
+Expected: Direct OpenRouter inference, GREEN confidence, viral URI
 
 **B -- Red Flag (Hard Override)**
 Input: "Chest tightness, left arm pain, sweating" (58yr male)
 Expected: Hard escalation, EMERGENCY urgency
 
-**C -- Complex Case (DeepSeek V4)**
+**C -- Complex Case (OpenRouter + RAG)**
 Input: "Fatigue 3 weeks, 5kg weight loss, night sweats" (42yr male)
-Expected: Remote inference, YELLOW confidence, lymphoma/TB differential
+Expected: RAG-grounded OpenRouter inference, YELLOW confidence, lymphoma/TB differential
 
 **D -- Low Confidence (Escalation Bias)**
 Input: "I feel off. Tired. Something is wrong." (45yr male)
@@ -281,9 +267,9 @@ Expected: Escalation bias applied, RED confidence badge, clinician referral
 
 | Mode | Behavior |
 |------|----------|
-| `auto` (default) | Local ONNX if model cached, else remote URL |
-| `local` | Force local Nemotron (~/.cache/medroute/nemotron-asr) |
-| `remote` | Force HTTP NeMo server at MEDROUTE_ASR_SERVER_URL |
+| `auto` (default) | Use local Whisper when faster-whisper is installed, otherwise try the remote URL |
+| `local` | Force local Whisper (`~/.cache/medroute/whisper`) |
+| `remote` | Force the HTTP ASR server at `MEDROUTE_ASR_SERVER_URL` |
 
 One-time model download:
 ```bash
@@ -291,7 +277,7 @@ cd backend
 .venv/bin/python scripts/download_asr_model.py
 ```
 
-The frontend captures raw PCM at 16 kHz mono WAV for reliable ASR input. Empty transcript results return soft (200 with empty text), not 503 errors. Debug WAV files are saved under `~/.cache/medroute/asr-debug/` when available.
+The frontend captures native-rate mono PCM/WAV and lets Whisper perform high-quality resampling. Empty transcript results return a soft response so the user can retry or edit the text manually.
 
 ## Project Structure
 
@@ -302,9 +288,8 @@ The frontend captures raw PCM at 16 kHz mono WAV for reliable ASR input. Empty t
 │   │   ├── tools
 │   │   │   ├── escalate_uncertain.py
 │   │   │   ├── __init__.py
-│   │   │   ├── local_infer.py
-│   │   │   ├── rag_search.py
-│   │   │   └── remote_infer.py
+│   │   │   ├── openrouter_infer.py
+│   │   │   └── rag_search.py
 │   │   ├── clinical_heuristics.py
 │   │   ├── __init__.py
 │   │   └── triage_agent.py
@@ -326,15 +311,14 @@ The frontend captures raw PCM at 16 kHz mono WAV for reliable ASR input. Empty t
 │   │   └── download_asr_model.py
 │   ├── voice
 │   │   ├── __init__.py
-│   │   ├── nemotron_local.py
 │   │   ├── roman_urdu.py
-│   │   └── transcriber.py
+│   │   ├── transcriber.py
+│   │   └── whisper_local.py
 │   ├── config.py
 │   ├── __init__.py
 │   ├── main.py
 │   ├── models.py
-│   ├── requirements.txt
-│   └── uv.lock
+│   └── requirements.txt
 ├── frontend
 │   ├── public
 │   │   ├── favicon.svg
@@ -372,17 +356,16 @@ The frontend captures raw PCM at 16 kHz mono WAV for reliable ASR input. Empty t
 
 What works offline (no GPU):
 - Full pipeline: parser -> safety -> scorer -> deterministic orchestrator -> PDF
-- All four demo scenarios routing/safety/heuristic diagnoses correct without Ollama/Fireworks
+- Demo scenarios retain deterministic routing/safety and heuristic fallback without model access
 - Seed RAG knowledge when ChromaDB empty or missing
-- Cascade: local/remote failure -> clinical heuristics -> escalate
+- Cascade: OpenRouter failure -> clinical heuristics -> clinician escalation
 - Confidence fusion + urgency + cascade audit trail
-- Local Nemotron ASR (ONNX INT4) with browser PCM/WAV capture
+- Local Whisper Large V3 Turbo ASR with native-rate browser PCM/WAV capture
 - FastAPI endpoints: /triage, /triage/stream, /transcribe, /report/{id}, /health
 
-What needs external services:
-- Ollama + hippomistral for live local LLM
-- ChromaDB + EmbeddingGemma for full vector RAG (seed still works offline)
-- Fireworks API key for remote DeepSeek path
+What needs external services/resources:
+- OpenRouter API access for live model inference
+- ChromaDB + EmbeddingGemma for full vector RAG (seed retrieval still works without them)
 
 ## Design Decisions
 
@@ -394,8 +377,8 @@ What needs external services:
 | FAST stroke keys in lexicon | Prior stroke pattern too nonspecific |
 | Sepsis min_match=3 + require fever | Reduce false positives on mild URI |
 | uv package manager | Fast, deterministic Python dependency management |
-| Local Nemotron ONNX ASR | No separate ASR server required for demos |
-| Raw PCM/WAV frontend capture | Avoids MediaRecorder/WebM 32-bit decode bugs |
+| Local Whisper ASR | Native Urdu support and strong conversational/code-switching recognition |
+| Native-rate PCM/WAV capture | Preserves audio quality and avoids MediaRecorder/WebM decode inconsistencies |
 
 ## License
 

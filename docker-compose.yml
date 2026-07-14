@@ -12,7 +12,5 @@ services:
     env_file:
       - .env
     environment:
-      - MEDROUTE_USE_MOCK_ASR=true
-      - MEDROUTE_USE_MOCK_LLM=true
       - MEDROUTE_CHROMA_PATH=/app/data/chroma
     restart: unless-stopped

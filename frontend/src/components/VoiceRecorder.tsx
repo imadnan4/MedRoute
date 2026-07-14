@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { transcribeAudio } from "../api";
 
 interface VoiceRecorderProps {
@@ -6,57 +6,37 @@ interface VoiceRecorderProps {
   disabled?: boolean;
 }
 
-/** Encode Float32 mono PCM as 16-bit little-endian WAV. */
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-  const numChannels = 1;
-  const bitsPerSample = 16;
-  const blockAlign = (numChannels * bitsPerSample) / 8;
-  const byteRate = sampleRate * blockAlign;
+  const blockAlign = 2;
   const dataSize = samples.length * blockAlign;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
-
-  const writeStr = (offset: number, s: string) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  const writeString = (offset: number, value: string) => {
+    for (let i = 0; i < value.length; i++)
+      view.setUint8(offset + i, value.charCodeAt(i));
   };
 
-  writeStr(0, "RIFF");
+  writeString(0, "RIFF");
   view.setUint32(4, 36 + dataSize, true);
-  writeStr(8, "WAVE");
-  writeStr(12, "fmt ");
-  view.setUint32(16, 16, true); // PCM chunk size
-  view.setUint16(20, 1, true); // PCM format
-  view.setUint16(22, numChannels, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
   view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bitsPerSample, true);
-  writeStr(36, "data");
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
   view.setUint32(40, dataSize, true);
 
   let offset = 44;
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  for (const sample of samples) {
+    const value = Math.max(-1, Math.min(1, sample));
+    view.setInt16(offset, value < 0 ? value * 0x8000 : value * 0x7fff, true);
     offset += 2;
   }
   return new Blob([buffer], { type: "audio/wav" });
-}
-
-/** Downsample Float32 audio to target rate with simple linear interpolation. */
-function downsample(buffer: Float32Array, fromRate: number, toRate: number): Float32Array {
-  if (fromRate === toRate) return buffer;
-  const ratio = fromRate / toRate;
-  const newLen = Math.max(1, Math.round(buffer.length / ratio));
-  const result = new Float32Array(newLen);
-  for (let i = 0; i < newLen; i++) {
-    const src = i * ratio;
-    const i0 = Math.floor(src);
-    const i1 = Math.min(i0 + 1, buffer.length - 1);
-    const t = src - i0;
-    result[i] = buffer[i0] * (1 - t) + buffer[i1] * t;
-  }
-  return result;
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -67,218 +47,281 @@ function blobToBase64(blob: Blob): Promise<string> {
       const comma = result.indexOf(",");
       resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
-    reader.onerror = () => reject(new Error("Failed to read audio"));
+    reader.onerror = () =>
+      reject(new Error("The audio file could not be read."));
     reader.readAsDataURL(blob);
   });
 }
 
-export default function VoiceRecorder({ onTranscript, disabled }: VoiceRecorderProps) {
+export default function VoiceRecorder({
+  onTranscript,
+  disabled,
+}: VoiceRecorderProps) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [textInput, setTextInput] = useState("");
   const [ageInput, setAgeInput] = useState("");
   const [pregnancyInput, setPregnancyInput] = useState("not_pregnant");
+  const [feedback, setFeedback] = useState("");
 
   const streamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const chunksRef = useRef<Float32Array[]>([]);
-  const startedAtRef = useRef<number>(0);
+  const startedAtRef = useRef(0);
 
   async function startRecording() {
+    setFeedback("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           channelCount: 1,
-          // Prefer 16 kHz when the browser honors it; we resample anyway
           sampleRate: 16000,
         },
       });
       streamRef.current = stream;
-
-      const AudioCtx =
+      const AudioContextConstructor =
         window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
-      audioCtxRef.current = ctx;
-      if (ctx.state === "suspended") {
-        await ctx.resume();
-      }
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      const context = new AudioContextConstructor();
+      audioContextRef.current = context;
+      if (context.state === "suspended") await context.resume();
 
-      const source = ctx.createMediaStreamSource(stream);
+      const source = context.createMediaStreamSource(stream);
+      const processor = context.createScriptProcessor(4096, 1, 1);
+      const mute = context.createGain();
+      mute.gain.value = 0;
       sourceRef.current = source;
-      // ScriptProcessor is deprecated but widely supported; buffer size 4096 is fine for offline capture
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
       chunksRef.current = [];
       startedAtRef.current = performance.now();
-
-      processor.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0);
-        chunksRef.current.push(new Float32Array(input));
+      processor.onaudioprocess = (event) => {
+        chunksRef.current.push(
+          new Float32Array(event.inputBuffer.getChannelData(0)),
+        );
       };
-
       source.connect(processor);
-      // Must connect to destination for some browsers to fire onaudioprocess; keep gain 0
-      const mute = ctx.createGain();
-      mute.gain.value = 0;
       processor.connect(mute);
-      mute.connect(ctx.destination);
-
+      mute.connect(context.destination);
       setRecording(true);
     } catch {
-      alert("Microphone access denied. Use text input instead.");
+      setFeedback(
+        "Microphone access is unavailable. Check browser permissions or use typed input.",
+      );
     }
   }
 
   async function stopRecording() {
     setRecording(false);
-
-    const ctx = audioCtxRef.current;
-    const processor = processorRef.current;
-    const source = sourceRef.current;
-    const stream = streamRef.current;
-    const nativeRate = ctx?.sampleRate || 48000;
-
+    const context = audioContextRef.current;
+    const nativeRate = context?.sampleRate || 48000;
     try {
-      processor?.disconnect();
-      source?.disconnect();
+      processorRef.current?.disconnect();
+      sourceRef.current?.disconnect();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      await context?.close();
     } catch {
-      /* ignore */
-    }
-    stream?.getTracks().forEach((t) => t.stop());
-    try {
-      await ctx?.close();
-    } catch {
-      /* ignore */
+      // Browser audio cleanup can safely fail after capture.
     }
     processorRef.current = null;
     sourceRef.current = null;
     streamRef.current = null;
-    audioCtxRef.current = null;
+    audioContextRef.current = null;
 
-    const parts = chunksRef.current;
+    const chunks = chunksRef.current;
     chunksRef.current = [];
-    const elapsedMs = performance.now() - startedAtRef.current;
-
-    if (!parts.length || elapsedMs < 400) {
-      alert("Recording too short. Hold the button and speak for at least 2–3 seconds.");
-      return;
-    }
-
-    const total = parts.reduce((n, p) => n + p.length, 0);
-    const merged = new Float32Array(total);
-    let offset = 0;
-    for (const p of parts) {
-      merged.set(p, offset);
-      offset += p.length;
-    }
-
-    // Peak check — warn early if mic captured near-silence
-    let peak = 0;
-    for (let i = 0; i < merged.length; i++) {
-      const a = Math.abs(merged[i]);
-      if (a > peak) peak = a;
-    }
-    if (peak < 0.005) {
-      alert(
-        "Microphone signal is very quiet. Check OS mic permissions/volume, speak closer, then try again."
+    if (!chunks.length || performance.now() - startedAtRef.current < 1500) {
+      setFeedback(
+        "Recording was too short. Speak clearly for at least two seconds, then stop.",
       );
       return;
     }
 
-    const pcm16k = downsample(merged, nativeRate, 16000);
-    const wav = encodeWav(pcm16k, 16000);
+    const merged = new Float32Array(
+      chunks.reduce((total, chunk) => total + chunk.length, 0),
+    );
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    const peak = merged.reduce(
+      (highest, sample) => Math.max(highest, Math.abs(sample)),
+      0,
+    );
+    if (peak < 0.005) {
+      setFeedback(
+        "The microphone signal was very quiet. Move closer and check the input volume.",
+      );
+      return;
+    }
 
     setTranscribing(true);
+    setFeedback("Transcribing the recording…");
     try {
-      const b64 = await blobToBase64(wav);
-      // Backend priority: Urdu → English only
-      const transcript = await transcribeAudio(b64, "ur");
-      if (transcript && transcript.trim()) {
-        setTextInput(transcript);
-      } else {
-        alert(
-          "No speech detected. Speak clearly for 2–3+ seconds in Urdu or English, or type your symptoms."
+      // Preserve the browser's native sample rate; Whisper's decoder performs
+      // higher-quality resampling than a simple client-side interpolation.
+      const wav = encodeWav(merged, nativeRate);
+      const transcript = await transcribeAudio(await blobToBase64(wav), "ur");
+      if (!transcript?.trim()) {
+        setFeedback(
+          "No speech was detected. Try again or type the symptoms below.",
         );
+        return;
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Transcription failed";
-      alert(`Voice transcription failed: ${msg}. Use text input instead.`);
+      setTextInput(transcript);
+      setFeedback(
+        "Voice transcription is ready. Review it before running triage.",
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Transcription failed.";
+      setFeedback(`${message} You can continue with typed input.`);
     } finally {
       setTranscribing(false);
     }
   }
 
-  function handleSubmit() {
-    const parts = [textInput];
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!textInput.trim()) return;
+    const parts = [textInput.trim()];
     if (ageInput) parts.push(`Age: ${ageInput} years`);
-    if (pregnancyInput && pregnancyInput !== "not_pregnant") {
+    if (pregnancyInput !== "not_pregnant")
       parts.push(`Pregnancy: ${pregnancyInput}`);
-    }
     onTranscript(parts.join(". "));
   }
 
   return (
-    <div>
-      <textarea
-        className="textarea"
-        value={textInput}
-        onChange={(e) => setTextInput(e.target.value)}
-        placeholder={
-          transcribing
-            ? "Transcribing audio via Nemotron 3.5 ASR..."
-            : "Describe symptoms in Urdu or English..."
-        }
-        rows={3}
-        disabled={disabled || transcribing}
-      />
-
-      <div className="input-row">
-        <input
-          className="input-field"
-          type="number"
-          placeholder="Age (years)"
-          value={ageInput}
-          onChange={(e) => setAgeInput(e.target.value)}
-          disabled={disabled}
+    <form className="intake-form" onSubmit={handleSubmit}>
+      <div className="field-group">
+        <div className="field-label-row">
+          <label htmlFor="symptoms">Symptoms and context</label>
+          <span>Urdu or English</span>
+        </div>
+        <textarea
+          id="symptoms"
+          className="textarea"
+          value={textInput}
+          onChange={(event) => setTextInput(event.target.value)}
+          placeholder={
+            transcribing
+              ? "Transcribing audio…"
+              : "Describe the symptoms, when they started, and anything that makes them better or worse."
+          }
+          rows={6}
+          disabled={disabled || transcribing}
         />
-        <select
-          className="select-field"
-          value={pregnancyInput}
-          onChange={(e) => setPregnancyInput(e.target.value)}
-          disabled={disabled}
-        >
-          <option value="not_pregnant">Not pregnant</option>
-          <option value="pregnant">Pregnant</option>
-          <option value="pregnant_3rd_trimester">Pregnant (3rd trimester)</option>
-        </select>
-        <button
-          className="btn btn-primary"
-          onClick={handleSubmit}
-          disabled={disabled || !textInput.trim()}
-        >
-          Submit
-        </button>
       </div>
 
-      <div style={{ marginTop: "8px" }}>
+      <div className="voice-row">
         <button
+          type="button"
           onClick={recording ? stopRecording : startRecording}
           disabled={disabled || transcribing}
-          className={`btn ${recording ? "btn-recording" : "btn-outline"}`}
+          className={`voice-button ${recording ? "is-recording" : ""}`}
         >
-          {recording ? "Stop Recording" : transcribing ? "Transcribing..." : "Record Voice"}
-        </button>
-        {recording && (
-          <span style={{ marginLeft: 10, fontSize: 13, opacity: 0.7 }}>
-            Listening… speak clearly, then stop
+          <span className="voice-icon" aria-hidden="true">
+            {recording ? (
+              <i />
+            ) : (
+              <svg viewBox="0 0 20 20" fill="none">
+                <rect
+                  x="7"
+                  y="2.5"
+                  width="6"
+                  height="10"
+                  rx="3"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M4.8 9.7a5.2 5.2 0 0 0 10.4 0M10 15v2.5M7.5 17.5h5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
           </span>
-        )}
+          {recording
+            ? "Stop recording"
+            : transcribing
+              ? "Transcribing"
+              : "Add voice note"}
+        </button>
+        <span className="voice-help">
+          {recording
+            ? "Listening now — speak clearly"
+            : "Recorded securely in this browser session"}
+        </span>
       </div>
-    </div>
+
+      {feedback && (
+        <p className="form-feedback" role="status">
+          {feedback}
+        </p>
+      )}
+
+      <div className="context-grid">
+        <div className="field-group compact">
+          <label htmlFor="age">Age</label>
+          <div className="input-with-suffix">
+            <input
+              id="age"
+              className="input-field"
+              type="number"
+              min="0"
+              max="120"
+              placeholder="e.g. 42"
+              value={ageInput}
+              onChange={(event) => setAgeInput(event.target.value)}
+              disabled={disabled}
+            />
+            <span>years</span>
+          </div>
+        </div>
+        <div className="field-group compact">
+          <label htmlFor="pregnancy">Pregnancy status</label>
+          <select
+            id="pregnancy"
+            className="select-field"
+            value={pregnancyInput}
+            onChange={(event) => setPregnancyInput(event.target.value)}
+            disabled={disabled}
+          >
+            <option value="not_pregnant">Not pregnant</option>
+            <option value="pregnant">Pregnant</option>
+            <option value="pregnant_3rd_trimester">
+              Pregnant · third trimester
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div className="form-actions">
+        <p>Results support—not replace—clinical judgment.</p>
+        <button
+          className="btn btn-primary btn-large"
+          type="submit"
+          disabled={disabled || transcribing || !textInput.trim()}
+        >
+          {disabled ? "Assessing patient" : "Run triage assessment"}
+          <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path
+              d="M3 9h12M10.5 4.5 15 9l-4.5 4.5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </form>
   );
 }

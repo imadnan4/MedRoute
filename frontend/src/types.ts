@@ -44,3 +44,9 @@ export interface TriageResponse {
   result: TriageResult;
   stages?: Record<string, unknown>;
 }
+
+export interface PipelineEvent {
+  stage: "asr" | "parser" | "safety" | "scorer" | "agent" | "done" | "error";
+  status: "running" | "completed" | "error";
+  data: Record<string, unknown>;
+}
