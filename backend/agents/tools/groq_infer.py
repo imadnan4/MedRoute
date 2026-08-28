@@ -65,7 +65,7 @@ def _chat(system: str, user: str, response_format: dict, max_tokens: int):
         ],
         "response_format": response_format,
         "max_tokens": max_tokens,
-        "temperature": 0.2,
+        "temperature": 0.0,
     }
     headers = {
         "Authorization": f"Bearer {settings.groq_api_key}",

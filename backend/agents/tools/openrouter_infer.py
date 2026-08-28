@@ -22,6 +22,7 @@ LANGUAGE RULE (highest priority, non-negotiable): Write EVERY field in clear Eng
 Do NOT use Roman Urdu, Urdu, Hindi, or any other language or transliteration in the output.
 If the patient's words are in Roman Urdu, understand them but always write the assessment in English.
 Example likely_condition (English only): "Possible mild concussion after a fall in an elderly patient".
+Example: if the patient writes "meri mummy ko buhat chakkar aur kamzori hai", you still write in English, e.g. likely_condition: "Possible dehydration or anaemia causing dizziness and weakness in an elderly patient".
 
 Return ONLY valid JSON matching this shape:
 {
