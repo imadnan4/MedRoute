@@ -36,6 +36,11 @@ class OpenRouterInfer:
         except (json.JSONDecodeError, TypeError):
             return {"status": "error", "reason": "non_json_inference_output"}
 
+    def infer_intake(self, transcript: str, domain: str = "home_health") -> dict:
+        from agents.tools.openrouter_infer import infer_intake
+
+        return infer_intake(transcript, domain)
+
 
 class InMemoryInfer:
     """Test double returning a canned, realistic triage dict (no network)."""
@@ -61,3 +66,16 @@ class InMemoryInfer:
     def infer(self, payload: dict) -> dict:
         self.last_payload = payload
         return dict(self.canned)
+
+    def infer_intake(self, transcript: str, domain: str = "home_health") -> dict:
+        return {
+            "contact_name": "Aisha",
+            "care_recipient_name": "Mrs. Khan",
+            "phone_or_contact": "03001234567",
+            "care_need_summary": "needs wound dressing at home twice a week",
+            "condition_or_issue": "leg ulcer",
+            "mobility_or_severity_notes": "limited mobility, uses walker",
+            "insurance_or_payment_notes": "private insurance",
+            "preferred_availability": "weekday mornings",
+            "free_text_summary": "Daughter calling about her mother who needs home wound care.",
+        }
