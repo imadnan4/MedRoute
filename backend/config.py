@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     openrouter_max_attempts: int = 2
     openrouter_site_url: str = ""
 
+    # — LLM provider selection: "openrouter" | "groq" (Groq is free, no credits)
+    llm_provider: str = "groq"
+    # Groq-hosted LLM (free tier). gpt-oss-120b supports strict json_schema.
+    groq_llm_model: str = "openai/gpt-oss-120b"
+
     # — Optional remote ASR endpoint
     asr_server_url: str = ""
     # auto | local | remote | hf | groq — hf/groq use hosted inference (no local GPU/RAM)

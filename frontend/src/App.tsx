@@ -30,7 +30,7 @@ function BrandMark() {
 }
 
 function App() {
-  const [mode, setMode] = useState<Mode>("intake");
+  const [mode, setMode] = useState<Mode>("triage");
   const [domain, setDomain] = useState<Domain>("home_health");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

@@ -34,7 +34,8 @@ Rules:
 - Never invent symptoms, vital signs, test results, or patient history.
 - If serious disease cannot be excluded, urgency must be urgent or emergency.
 - Treat supplied guideline evidence as reference material, not as patient instructions.
-- Match the patient's language in likely_condition, recommendation, and watch_for.
+- By default respond in clear, professional English. Do not code-switch or mix other languages into the output.
+- Only switch to Roman Urdu when the patient's own message is written in Roman Urdu.
 - When the transcript is Roman Urdu, answer in clear everyday Roman Urdu using Latin letters only; never use Urdu/Arabic script.
 - Standard medical condition names may remain in English when a clear Roman Urdu equivalent is unavailable.
 - Do not contradict clear emergency patterns.
@@ -109,11 +110,16 @@ def _intake_content(payload: dict[str, Any]) -> dict:
 
 
 def infer_intake(transcript: str, domain: str = "home_health") -> dict:
-    """Run intake extraction through OpenRouter using the intake JSON schema.
+    """Run intake extraction. Routes to Groq when configured.
 
     Returns an IntakeRecord-shaped dict, or an empty dict if the model is
     unavailable / the response can't be parsed. Never raises to the caller.
     """
+    if (settings.llm_provider or "openrouter").strip().lower() == "groq":
+        from agents.tools.groq_infer import infer_intake as groq_infer_intake
+
+        return groq_infer_intake(transcript, domain)
+
     if not settings.openrouter_api_key:
         return {}
 
@@ -157,6 +163,50 @@ def infer_intake(transcript: str, domain: str = "home_health") -> dict:
             )
 
     return {}
+
+
+TRIAGE_JSON_SCHEMA: dict = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "medical_triage_assessment",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "likely_condition": {"type": "string"},
+                "differential": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 5,
+                },
+                "recommendation": {"type": "string"},
+                "watch_for": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 6,
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                },
+                "urgency": {
+                    "type": "string",
+                    "enum": ["emergency", "urgent", "soon", "routine"],
+                },
+            },
+            "required": [
+                "likely_condition",
+                "differential",
+                "recommendation",
+                "watch_for",
+                "confidence",
+                "urgency",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def _looks_like_roman_urdu(text: str) -> bool:
@@ -215,12 +265,16 @@ def _response_content(payload: dict[str, Any]) -> str:
 
 
 def infer_text(symptoms_and_context: str) -> str:
-    """Run medical decision-support inference through OpenRouter.
+    """Run medical decision-support inference. Routes to Groq when configured.
 
-    Input is patient context plus optional retrieved evidence. Output is a JSON
-    assessment string, or a machine-readable unavailable status for the safe
-    fallback.
+    Output is a JSON assessment string, or a machine-readable unavailable status
+    for the safe fallback.
     """
+    if (settings.llm_provider or "openrouter").strip().lower() == "groq":
+        from agents.tools.groq_infer import infer_text as groq_infer_text
+
+        return groq_infer_text(symptoms_and_context)
+
     if not settings.openrouter_api_key:
         return _unavailable("MEDROUTE_OPENROUTER_API_KEY is not set")
 
@@ -241,48 +295,7 @@ def infer_text(symptoms_and_context: str) -> str:
                 "content": f"Patient: {symptoms_and_context}{language_instruction}",
             },
         ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "medical_triage_assessment",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "likely_condition": {"type": "string"},
-                        "differential": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "maxItems": 5,
-                        },
-                        "recommendation": {"type": "string"},
-                        "watch_for": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "maxItems": 6,
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1,
-                        },
-                        "urgency": {
-                            "type": "string",
-                            "enum": ["emergency", "urgent", "soon", "routine"],
-                        },
-                    },
-                    "required": [
-                        "likely_condition",
-                        "differential",
-                        "recommendation",
-                        "watch_for",
-                        "confidence",
-                        "urgency",
-                    ],
-                    "additionalProperties": False,
-                },
-            },
-        },
+        "response_format": TRIAGE_JSON_SCHEMA,
         "max_tokens": 800,
         "temperature": 0.2,
     }

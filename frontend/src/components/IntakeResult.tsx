@@ -147,7 +147,37 @@ export default function IntakeResult({ data }: IntakeResultProps) {
         </dl>
       </section>
 
-      <JsonDownload data={data} fileName={`intake_${data.case_id.slice(0, 8)}.json`} />
+      <JsonDownload
+        text={buildIntakeSheet(data)}
+        fileName={`intake_${data.case_id.slice(0, 8)}.txt`}
+        title="Intake sheet"
+        description="Download a readable intake sheet for the care team or family."
+        buttonLabel="Download intake sheet"
+      />
     </article>
   );
+}
+
+function buildIntakeSheet(data: IntakeResponse): string {
+  const lines: string[] = [];
+  lines.push("MEDROUTE — INTAKE SHEET");
+  lines.push(`Case: ${data.case_id.slice(0, 8).toUpperCase()}`);
+  lines.push(`Routing: ${data.disposition.replace(/_/g, " ")}`);
+  if (data.red_flag) {
+    lines.push(`RED FLAG: ${data.red_flag.message}`);
+  }
+  if (data.distress && data.distress.matched && data.distress.matched.length) {
+    lines.push(`Distress flags: ${data.distress.matched.join(", ")}`);
+  }
+  lines.push("");
+  lines.push("Transcript:");
+  lines.push(data.raw_transcript || "(none)");
+  lines.push("");
+  lines.push("Extracted record:");
+  for (const { key, label } of RECORD_ROWS) {
+    const value = data.extracted[key];
+    if (value === null || value === undefined || value === "") continue;
+    lines.push(`- ${label}: ${value}`);
+  }
+  return lines.join("\n");
 }

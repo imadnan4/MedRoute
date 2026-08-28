@@ -1,28 +1,43 @@
 import { useState } from "react";
 
 interface JsonDownloadProps {
-  data: unknown;
+  data?: unknown;
+  text?: string;
   fileName?: string;
+  title?: string;
+  description?: string;
+  buttonLabel?: string;
 }
 
-export default function JsonDownload({ data, fileName }: JsonDownloadProps) {
+export default function JsonDownload({
+  data,
+  text,
+  fileName,
+  title = "Structured intake record",
+  description = "Download the full machine-readable JSON for handoff to your case system.",
+  buttonLabel = "Download JSON",
+}: JsonDownloadProps) {
   const [error, setError] = useState("");
 
   function handleDownload() {
     setError("");
     try {
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
+      const isText = text !== undefined;
+      const content = isText ? text : JSON.stringify(data, null, 2);
+      const blob = new Blob([content ?? ""], {
+        type: isText ? "text/plain" : "application/json",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = fileName ?? "medroute.json";
+      a.download =
+        fileName ?? (isText ? "medroute.txt" : "medroute.json");
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      setError("The JSON could not be prepared. Please try again.");
+      setError("The file could not be prepared. Please try again.");
     }
   }
 
@@ -45,11 +60,8 @@ export default function JsonDownload({ data, fileName }: JsonDownloadProps) {
           </svg>
         </span>
         <div>
-          <h3>Structured intake record</h3>
-          <p>
-            Download the full machine-readable JSON for handoff to your case
-            system.
-          </p>
+          <h3>{title}</h3>
+          <p>{description}</p>
         </div>
       </div>
       <button
@@ -66,7 +78,7 @@ export default function JsonDownload({ data, fileName }: JsonDownloadProps) {
             strokeLinejoin="round"
           />
         </svg>
-        Download JSON
+        {buttonLabel}
       </button>
       {error && (
         <p className="download-error" role="alert">
