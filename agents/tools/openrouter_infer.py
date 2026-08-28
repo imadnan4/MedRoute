@@ -11,6 +11,8 @@ import requests
 from config import settings
 from langchain_core.tools import tool
 
+from pipeline.extraction.intake_extract import INTAKE_JSON_SCHEMA
+
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert medical diagnostician supporting primary-care triage
@@ -66,6 +68,95 @@ ROMAN_URDU_MARKERS = {
     "takleef",
     "ho raha",
 }
+
+
+INTAKE_SYSTEM_HOME_HEALTH = (
+    "You are an intake coordinator for a home-health and care-coordination service. "
+    "Extract structured intake information from the caller's message into the provided "
+    "JSON schema. Be neutral and factual. Use null for unstated fields. "
+    "Do NOT diagnose or give medical advice."
+)
+
+INTAKE_SYSTEM_LEGAL = (
+    "You are an intake coordinator for a legal-aid and advice service (non-clinical). "
+    "Extract structured intake information from the caller's message into the provided "
+    "JSON schema. Be neutral and factual. Use null for unstated fields. "
+    "Do NOT give legal advice."
+)
+
+
+def _intake_content(payload: dict[str, Any]) -> dict:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("OpenRouter response contained no choices")
+
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        raise ValueError("OpenRouter response contained no assistant message")
+
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("OpenRouter returned an empty response")
+
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ValueError("OpenRouter returned invalid JSON") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError("OpenRouter intake response was not a JSON object")
+    return data
+
+
+def infer_intake(transcript: str, domain: str = "home_health") -> dict:
+    """Run intake extraction through OpenRouter using the intake JSON schema.
+
+    Returns an IntakeRecord-shaped dict, or an empty dict if the model is
+    unavailable / the response can't be parsed. Never raises to the caller.
+    """
+    if not settings.openrouter_api_key:
+        return {}
+
+    system = INTAKE_SYSTEM_LEGAL if domain == "legal" else INTAKE_SYSTEM_HOME_HEALTH
+    request_body = {
+        "model": settings.openrouter_model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": transcript},
+        ],
+        "response_format": INTAKE_JSON_SCHEMA,
+        "max_tokens": 600,
+        "temperature": 0.1,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "Content-Type": "application/json",
+        "X-OpenRouter-Title": "MedRoute",
+    }
+    if settings.openrouter_site_url:
+        headers["HTTP-Referer"] = settings.openrouter_site_url
+
+    last_error = "OpenRouter request failed"
+    for attempt in range(1, max(settings.openrouter_max_attempts, 1) + 1):
+        try:
+            response = requests.post(
+                f"{settings.openrouter_base_url.rstrip('/')}/chat/completions",
+                headers=headers,
+                json=request_body,
+                timeout=settings.openrouter_timeout,
+            )
+            response.raise_for_status()
+            return _intake_content(response.json())
+        except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+            last_error = str(exc)
+            log.warning(
+                "OpenRouter intake attempt %d/%d failed: %s",
+                attempt,
+                settings.openrouter_max_attempts,
+                exc,
+            )
+
+    return {}
 
 
 def _looks_like_roman_urdu(text: str) -> bool:

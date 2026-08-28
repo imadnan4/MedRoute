@@ -102,11 +102,16 @@ def extract_intake(transcript: str, inference: Any, domain: str = "home_health")
         if domain == "legal"
         else INTAKE_PROMPT_HOME_HEALTH
     )
-    payload = {
-        "context": prompt.format(transcript=transcript),
-        "response_format": INTAKE_JSON_SCHEMA,
-    }
-    data = inference.infer(payload)
+
+    if hasattr(inference, "infer_intake"):
+        data = inference.infer_intake(transcript, domain)
+    else:
+        payload = {
+            "context": prompt.format(transcript=transcript),
+            "response_format": INTAKE_JSON_SCHEMA,
+        }
+        data = inference.infer(payload)
+
     if not isinstance(data, dict):
         data = {}
     return IntakeRecord.from_dict(data).to_dict()
