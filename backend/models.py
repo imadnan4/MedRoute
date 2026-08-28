@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,22 @@ class RedFlagResult(BaseModel):
     flag_class: Optional[str] = None  # MI, stroke, sepsis, ...
     message: str = ""
     matched_symptoms: list[str] = Field(default_factory=list)
+
+
+class Acuity(str, Enum):
+    """Categorical severity derived from a Presentation (routine / priority / urgent)."""
+
+    ROUTINE = "routine"
+    PRIORITY = "priority"
+    URGENT = "urgent"
+
+
+class Disposition(str, Enum):
+    """Decision of where an Encounter goes next."""
+
+    ESCALATE_TO_CLINICIAN = "escalate_to_clinician"
+    STANDARD_QUEUE = "standard_queue"
+    PROVIDE_GUIDANCE = "provide_guidance"
 
 
 class TriageRoute(str, Enum):
@@ -105,3 +122,99 @@ class TriageResult(BaseModel):
     model_confidence: Optional[float] = None
     scorer_confidence: Optional[float] = None
     cascade_used: list[str] = Field(default_factory=list)
+    acuity: Optional[Acuity] = None
+    disposition: Optional[Disposition] = None
+
+
+@dataclass
+class IntakeRecord:
+    """Structured capture of an Encounter's Presentation from the Intake mode.
+
+    Holds who is contacting, the care recipient, the care need, and the logistics
+    (contact, availability, insurance). Domain-neutral: home-health / care-coordination
+    generic — no clinical diagnosis.
+    """
+
+    contact_name: Optional[str] = None
+    care_recipient_name: Optional[str] = None
+    phone_or_contact: Optional[str] = None
+    care_need_summary: str = ""
+    condition_or_issue: Optional[str] = None
+    mobility_or_severity_notes: Optional[str] = None
+    insurance_or_payment_notes: Optional[str] = None
+    preferred_availability: Optional[str] = None
+    free_text_summary: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "contact_name": self.contact_name,
+            "care_recipient_name": self.care_recipient_name,
+            "phone_or_contact": self.phone_or_contact,
+            "care_need_summary": self.care_need_summary,
+            "condition_or_issue": self.condition_or_issue,
+            "mobility_or_severity_notes": self.mobility_or_severity_notes,
+            "insurance_or_payment_notes": self.insurance_or_payment_notes,
+            "preferred_availability": self.preferred_availability,
+            "free_text_summary": self.free_text_summary,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "IntakeRecord":
+        return cls(
+            contact_name=data.get("contact_name"),
+            care_recipient_name=data.get("care_recipient_name"),
+            phone_or_contact=data.get("phone_or_contact"),
+            care_need_summary=data.get("care_need_summary", ""),
+            condition_or_issue=data.get("condition_or_issue"),
+            mobility_or_severity_notes=data.get("mobility_or_severity_notes"),
+            insurance_or_payment_notes=data.get("insurance_or_payment_notes"),
+            preferred_availability=data.get("preferred_availability"),
+            free_text_summary=data.get("free_text_summary", ""),
+        )
+
+
+@dataclass
+class DistressResult:
+    """Output of the intake distress / safeguarding pre-check.
+
+    Parallel to ``RedFlagResult`` but for caller distress, escalation, and
+    safeguarding concerns (vulnerable adult/child, domestic abuse, self-neglect).
+    Deterministic, pre-LLM, and never a diagnosis.
+    """
+
+    triggered: bool = False
+    klass: Optional[str] = None
+    reason: str = ""
+    matched: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "triggered": self.triggered,
+            "klass": self.klass,
+            "reason": self.reason,
+            "matched": self.matched,
+        }
+
+
+@dataclass
+class Encounter:
+    """A single first-contact event resolved through one Mode over the shared core.
+
+    ``extracted`` holds the IntakeRecord dict for intake mode, or the triage
+    result dict for triage mode. ``red_flag`` reuses the shared RedFlagResult so
+    both modes share one safety pre-check. ``distress`` carries the parallel
+    intake safeguarding pre-check; ``domain`` records which intake variant ran.
+    """
+
+    mode: str
+    input_mode: str
+    input_language: Optional[str]
+    raw_transcript: str
+    red_flag: Any
+    acuity: Optional[Acuity]
+    disposition: Disposition
+    extracted: dict
+    case_id: str
+    needs_human_review: bool
+    distress: Any = None
+    domain: str = "home_health"

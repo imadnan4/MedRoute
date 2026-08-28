@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 _collection_cache = None
 
-# Compact primary-care triage knowledge for offline / empty-chroma demos
+# Compact primary-care triage knowledge for offline / empty-chroma setups
 SEED_KNOWLEDGE: list[tuple[str, str]] = [
     (
         "viral uri cold cough fever headache sore throat",

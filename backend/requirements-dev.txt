@@ -1,0 +1,42 @@
+# Local development dependencies (full ML/RAG + local ASR stack).
+# Heroku uses the lean requirements.txt (no torch/chroma/faster-whisper).
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+sse-starlette==2.1.3
+
+# LangChain agent framework
+langchain==0.3.14
+langchain-core==0.3.30
+langchain-community==0.3.14
+
+# Embedding model for local RAG (small, 1.2GB — runs locally)
+sentence-transformers>=5.0
+
+# Vector store
+chromadb==0.6.3
+
+# HTTP calls to OpenRouter and an optional remote ASR server
+requests==2.32.3
+
+# Medical corpus loading
+datasets==3.2.0
+
+# Report generation
+weasyprint==63.0
+jinja2==3.1.5
+
+# Utils
+httpx==0.28.1
+numpy==1.26.4
+
+# Local multilingual ASR (native Urdu support; CPU INT8 or NVIDIA CUDA)
+faster-whisper>=1.2.1
+soundfile==0.14.0
+huggingface-hub>=0.28.0
+# Urdu/Devanagari script -> Roman Urdu for UI + symptom lexicon
+uroman>=1.3.1.1
+indic-transliteration>=2.3.0

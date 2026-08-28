@@ -26,10 +26,14 @@ class Settings(BaseSettings):
 
     # — Optional remote ASR endpoint
     asr_server_url: str = ""
-    # auto | local | remote | hf — hf uses HuggingFace hosted Inference API (no local GPU/RAM)
+    # auto | local | remote | hf | groq — hf/groq use hosted inference (no local GPU/RAM)
     asr_mode: str = "auto"
     # Model to use on HuggingFace Inference API when asr_mode=hf
     hf_asr_model: str = "openai/whisper-large-v3"
+
+    # — Groq Whisper (hosted ASR, MEDROUTE_GROQ_API_KEY)
+    groq_api_key: str = ""
+    groq_asr_model: str = "whisper-large-v3-turbo"
 
     # — HuggingFace (optional, speeds up model downloads)
     hf_token: str = ""

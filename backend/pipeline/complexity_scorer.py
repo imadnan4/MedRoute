@@ -27,6 +27,8 @@ from models import (
     TriageScore,
 )
 
+from clinical_knowledge import CLUSTER_BONUS
+
 log = logging.getLogger(__name__)
 
 # Base complexity weight per symptom (1-3). Higher = more diagnostically complex.
@@ -70,16 +72,6 @@ SYMPTOM_COUNT_BONUS = {
     3: 2,
     4: 3,
     5: 4,
-}
-
-# Syndrome cluster bonuses — multi-symptom patterns that raise diagnostic complexity
-CLUSTER_BONUS = {
-    "viral_uri": 0,  # common, low complexity
-    "b_symptoms": 3,  # lymphoma/TB/HIV workup territory
-    "acs_constellation": 2,  # even if red-flag didn't fire, escalate compute
-    "gi_illness": 1,
-    "neuro_acute": 3,
-    "respiratory_distress": 2,
 }
 
 # Confidence heuristics: specific findings boost; vagueness penalizes

@@ -1,9 +1,11 @@
 import { useRef, useState, type FormEvent } from "react";
 import { transcribeAudio } from "../api";
+import type { IntakeSubmitData } from "../types";
 
 interface VoiceRecorderProps {
-  onTranscript: (text: string) => void;
+  onSubmit: (data: IntakeSubmitData) => void;
   disabled?: boolean;
+  submitLabel?: string;
 }
 
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
@@ -54,8 +56,9 @@ function blobToBase64(blob: Blob): Promise<string> {
 }
 
 export default function VoiceRecorder({
-  onTranscript,
+  onSubmit,
   disabled,
+  submitLabel,
 }: VoiceRecorderProps) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -189,11 +192,14 @@ export default function VoiceRecorder({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!textInput.trim()) return;
-    const parts = [textInput.trim()];
-    if (ageInput) parts.push(`Age: ${ageInput} years`);
-    if (pregnancyInput !== "not_pregnant")
-      parts.push(`Pregnancy: ${pregnancyInput}`);
-    onTranscript(parts.join(". "));
+    const ageYears = ageInput ? Number(ageInput) : null;
+    const ageMonths = ageInput ? null : null;
+    onSubmit({
+      transcript: textInput.trim(),
+      age_years: Number.isFinite(ageYears) ? Number(ageYears) : null,
+      age_months: ageMonths,
+      pregnancy: pregnancyInput === "not_pregnant" ? null : pregnancyInput,
+    });
   }
 
   return (
@@ -310,7 +316,7 @@ export default function VoiceRecorder({
           type="submit"
           disabled={disabled || transcribing || !textInput.trim()}
         >
-          {disabled ? "Assessing patient" : "Run triage assessment"}
+          {disabled ? "Working" : (submitLabel ?? "Run assessment")}
           <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <path
               d="M3 9h12M10.5 4.5 15 9l-4.5 4.5"

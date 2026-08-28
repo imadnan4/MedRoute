@@ -299,7 +299,8 @@ The frontend captures native-rate mono PCM/WAV and lets Whisper perform high-qua
 │   │   ├── complexity_scorer.py
 │   │   ├── __init__.py
 │   │   ├── input_parser.py
-│   │   └── report_generator.py
+│   │   ├── report_generator.py
+│   │   └── triage_pipeline.py
 │   ├── rag
 │   │   ├── __init__.py
 │   │   ├── loader.py
@@ -314,6 +315,7 @@ The frontend captures native-rate mono PCM/WAV and lets Whisper perform high-qua
 │   │   ├── roman_urdu.py
 │   │   ├── transcriber.py
 │   │   └── whisper_local.py
+│   ├── clinical_knowledge.py
 │   ├── config.py
 │   ├── __init__.py
 │   ├── main.py
@@ -352,6 +354,29 @@ The frontend captures native-rate mono PCM/WAV and lets Whisper perform high-qua
 └── README.md
 ```
 
+## Pipeline architecture
+
+The full triage flow lives in one **deep module**, `backend/pipeline/triage_pipeline.py`,
+which owns the stage order (`asr → parser → safety → scorer → agent`) and assembles the
+structured outcome that the web layer previously hand-built in two places. Both HTTP
+endpoints (`POST /triage` and `GET /triage/stream`) call a single `TriagePipeline.run(...)`
+interface; the SSE endpoint passes an `on_stage(name, status, payload)` callback to observe
+progress without the pipeline knowing anything about SSE. Stage dependencies are injected at
+construction, so the module is testable with fakes (`backend/tests/test_triage_pipeline.py`,
+run offline via `pytest`). This concentrates the orchestration in one place and keeps the web
+layer free of pipeline state.
+
+The LLM inference call is behind an `InferenceAdapter` seam (`backend/agents/tools/inference.py`):
+`OpenRouterInfer` is the production implementation, `InMemoryInfer` a test double, so the
+triage cascade is exercisable offline. The report generator (`backend/pipeline/report_generator.py`)
+loads its template lazily and accepts an injected `now=`, making PDF output deterministic and testable.
+The dead network-coupled RAG `loader.py` was removed; retrieval runs on seed knowledge.
+All shared clinical knowledge (symptom lexicon, syndrome clusters, cluster bonuses, red-flag
+patterns) lives in one owned module, `backend/clinical_knowledge.py`, so the parser, scorer,
+and safety checker read from a single source of truth instead of leaking copies across seams.
+The backend test suite (`backend/tests/`, run with `pytest`) covers the pipeline, inference
+adapter, report generator, and retriever offline.
+
 ## Build Progress
 
 What works offline (no GPU):
@@ -372,13 +397,72 @@ What needs external services/resources:
 | Decision | Reason |
 |----------|--------|
 | Deterministic orchestrator over pure ReAct | ReAct ignores route hints; unsafe for triage |
-| Seed RAG + clinical heuristics | Offline/demo quality without GPU |
+| Seed RAG + clinical heuristics | Offline quality without GPU |
 | Confidence fusion: min when disagree | Medical LLM uncertainty literature |
 | FAST stroke keys in lexicon | Prior stroke pattern too nonspecific |
 | Sepsis min_match=3 + require fever | Reduce false positives on mild URI |
 | uv package manager | Fast, deterministic Python dependency management |
 | Local Whisper ASR | Native Urdu support and strong conversational/code-switching recognition |
 | Native-rate PCM/WAV capture | Preserves audio quality and avoids MediaRecorder/WebM decode inconsistencies |
+
+## Deployment
+
+Config-only setup for **MedRoute**. The backend (FastAPI) deploys to **Heroku**; the frontend (React + Vite) deploys to **Vercel**. No real patient data is used — MedRoute ships with bundled **sample/synthetic transcripts** for local testing and runs on that data out of the box, not a production medical device.
+
+### Backend → Heroku
+
+The backend ships `backend/Procfile` and `backend/runtime.txt` (Python 3.12.7). The Procfile runs:
+
+```
+web: uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+Heroku sets `$PORT`; do not hardcode a port. Deploy the `backend/` directory as its own Heroku app:
+
+```bash
+cd backend
+
+# Create the app (Heroku detects the Python buildpack from runtime.txt)
+heroku create medroute-app
+
+# Required env vars (see .env.example)
+heroku config:set MEDROUTE_OPENROUTER_API_KEY=sk-or-v1-...
+heroku config:set MEDROUTE_ASR_MODE=groq
+# Optional:
+heroku config:set MEDROUTE_GROQ_API_KEY=gsk_...
+heroku config:set MEDROUTE_ICD_API_KEY=       # optional, RAG corpus
+
+# Push
+git subtree push --prefix backend heroku main
+# or, with a backend-only remote: git push heroku main
+```
+
+`requirements.txt` already includes `fastapi`, `uvicorn`, `pydantic`, `httpx`, and `requests` — all build deps are satisfied.
+
+> **ASR note:** hosted ASR uses **Groq Whisper** (`MEDROUTE_ASR_MODE=groq`), which needs `MEDROUTE_GROQ_API_KEY`, because Heroku has no GPU. Set `MEDROUTE_ASR_MODE=groq` so transcription runs without a cached local model.
+
+### Frontend → Vercel
+
+The frontend has `frontend/vercel.json` (framework `vite`, build `npm run build`, output `dist`). Import the repo in Vercel and set:
+
+- **Root Directory:** `frontend`
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+- **Environment Variable:** `VITE_API_URL` = your Heroku backend URL (e.g. `https://medroute-app.herokuapp.com`)
+
+`VITE_API_URL` is read in `frontend/src/api.ts` (`import.meta.env.VITE_API_URL`). Without it, the UI falls back to `http://localhost:8000`.
+
+### Required environment variables (real names from `backend/config.py`)
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `MEDROUTE_OPENROUTER_API_KEY` | Yes | LLM triage inference via OpenRouter |
+| `MEDROUTE_ASR_MODE` | Yes (set `groq`) | Hosted Groq Whisper ASR — no local GPU needed |
+| `MEDROUTE_GROQ_API_KEY` | Yes (when `asr_mode=groq`) | Groq API key for hosted Whisper ASR |
+| `MEDROUTE_ICD_API_KEY` | Optional | WHO ICD-11 RAG corpus loading |
+| `MEDROUTE_OPENROUTER_MODEL` | No (default `openrouter/free`) | OpenRouter model ID |
+
+Never commit `backend/.env` or any secret. Use `heroku config:set` / Vercel env vars instead.
 
 ## License
 

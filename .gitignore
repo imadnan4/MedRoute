@@ -86,3 +86,6 @@ skills-lock.json
 .mise.local.toml
 *.code-workspace
 PROGRESS.md
+
+# Local Netlify folder
+.netlify

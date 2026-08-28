@@ -13,16 +13,13 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, Template
 from models import ConfidenceLevel, TriageResult, TriageRoute
 
 log = logging.getLogger(__name__)
 
 HERE = Path(__file__).resolve().parent
 TEMPLATE_DIR = HERE / "templates"
-
-_env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
-_template = _env.get_template("report.html")
 
 
 def _badge_class(level: ConfidenceLevel) -> str:
@@ -33,20 +30,42 @@ def _badge_class(level: ConfidenceLevel) -> str:
     return "badge-red"
 
 
-def generate_html(result: TriageResult) -> str:
-    """Render the HTML report from the Jinja2 template."""
-    return _template.render(
+def _load_template() -> Template:
+    """Load the packaged report template lazily (no import-time side effects)."""
+    env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
+    return env.get_template("report.html")
+
+
+def _resolve_template(template) -> Template:
+    if template is None:
+        return _load_template()
+    if isinstance(template, str):
+        return Template(template)
+    return template
+
+
+def generate_html(result: TriageResult, *, template=None, now=None) -> str:
+    """Render the HTML report from the Jinja2 template.
+
+    ``template`` may be a Jinja2 ``Template``, a template source string, or None
+    (loads the packaged ``templates/report.html``). ``now`` overrides the
+    timestamp so output is deterministic in tests; defaults to ``utcnow``.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    tpl = _resolve_template(template)
+    return tpl.render(
         result=result,
         badge_class=_badge_class(result.confidence_level),
         is_red_flag=result.route == TriageRoute.HARD_ESCALATION,
         patient=result.patient,
-        report_date=datetime.now(timezone.utc).strftime("%d %B %Y · %H:%M UTC"),
+        report_date=now.strftime("%d %B %Y · %H:%M UTC"),
     )
 
 
-def generate_pdf(result: TriageResult) -> bytes:
+def generate_pdf(result: TriageResult, *, template=None, now=None) -> bytes:
     """Generate a PDF bytes from a TriageResult."""
-    html = generate_html(result)
+    html = generate_html(result, template=template, now=now)
     try:
         from weasyprint import HTML
 

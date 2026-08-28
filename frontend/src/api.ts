@@ -1,4 +1,10 @@
-import type { PipelineEvent, TriageRequest, TriageResponse } from "./types";
+import type {
+  EncounterRequest,
+  EncounterResponse,
+  PipelineEvent,
+  TriageRequest,
+  TriageResponse,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -99,4 +105,24 @@ export async function downloadReport(caseId: string): Promise<void> {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Unified first-contact call. Runs intake OR triage on the backend based on
+ * `req.mode`. Returns the intake body directly, or a wrapped triage entry
+ * whose `result` is the TriageResult.
+ */
+export async function postEncounter(
+  req: EncounterRequest,
+): Promise<EncounterResponse> {
+  const res = await fetch(`${API_BASE}/encounter`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Encounter failed: ${err}`);
+  }
+  return (await res.json()) as EncounterResponse;
 }

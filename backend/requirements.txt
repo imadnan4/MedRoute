@@ -1,3 +1,6 @@
+# MedRoute — Heroku deploy dependencies (kept lean; no local-only ML/RAG stack).
+# For local development with RAG + local Whisper, use requirements-dev.txt.
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
@@ -10,30 +13,15 @@ langchain==0.3.14
 langchain-core==0.3.30
 langchain-community==0.3.14
 
-# Embedding model for local RAG (small, 1.2GB — runs locally)
-sentence-transformers>=5.0
-
-# Vector store
-chromadb==0.6.3
-
-# HTTP calls to OpenRouter and an optional remote ASR server
+# HTTP calls to OpenRouter + Groq ASR
 requests==2.32.3
-
-# Medical corpus loading
-datasets==3.2.0
-
-# Report generation
-weasyprint==63.0
-jinja2==3.1.5
-
-# Utils
 httpx==0.28.1
 numpy==1.26.4
 
-# Local multilingual ASR (native Urdu support; CPU INT8 or NVIDIA CUDA)
-faster-whisper>=1.2.1
-soundfile==0.14.0
-huggingface-hub>=0.28.0
-# Urdu/Devanagari script → Roman Urdu for UI + symptom lexicon
+# Report generation (system libs provided by Aptfile)
+weasyprint==63.0
+jinja2==3.1.5
+
+# Roman Urdu transliteration (Groq ASR path)
 uroman>=1.3.1.1
 indic-transliteration>=2.3.0

@@ -2,8 +2,15 @@ import { useState } from "react";
 import VoiceRecorder from "./components/VoiceRecorder";
 import TriageResultView from "./components/TriageResult";
 import ReportDownload from "./components/ReportDownload";
-import type { PipelineEvent, TriageResult } from "./types";
-import { streamTriage } from "./api";
+import IntakeResult from "./components/IntakeResult";
+import type {
+  Domain,
+  IntakeResponse,
+  IntakeSubmitData,
+  Mode,
+  TriageResult,
+} from "./types";
+import { postEncounter } from "./api";
 import "./App.css";
 
 function BrandMark() {
@@ -16,108 +23,46 @@ function BrandMark() {
           strokeWidth="2.4"
           strokeLinecap="round"
         />
-        <circle
-          cx="14"
-          cy="14"
-          r="11"
-          stroke="currentColor"
-          strokeWidth="1.2"
-        />
+        <circle cx="14" cy="14" r="11" stroke="currentColor" strokeWidth="1.2" />
       </svg>
     </span>
   );
 }
 
-interface ProgressState {
-  percent: number;
-  label: string;
-  detail: string;
-  completed: string[];
-}
-
-const INITIAL_PROGRESS: ProgressState = {
-  percent: 1,
-  label: "Connecting to MedRoute",
-  detail: "Connecting to the clinical pipeline",
-  completed: [],
-};
-
-const STAGE_PROGRESS: Record<
-  string,
-  { running: number; completed: number; label: string; detail: string }
-> = {
-  asr: {
-    running: 3,
-    completed: 14,
-    label: "Preparing patient input",
-    detail: "Confirming transcript and language",
-  },
-  parser: {
-    running: 18,
-    completed: 32,
-    label: "Structuring symptoms",
-    detail: "Extracting symptoms, duration, and patient context",
-  },
-  safety: {
-    running: 37,
-    completed: 52,
-    label: "Checking emergency patterns",
-    detail: "Running deterministic red-flag safety rules",
-  },
-  scorer: {
-    running: 57,
-    completed: 69,
-    label: "Scoring clinical complexity",
-    detail: "Selecting the safest assessment route",
-  },
-  agent: {
-    running: 74,
-    completed: 96,
-    label: "Preparing recommendation",
-    detail: "Retrieving evidence and generating the clinical assessment",
-  },
-  done: {
-    running: 99,
-    completed: 100,
-    label: "Assessment complete",
-    detail: "Final result is ready",
-  },
-};
-
 function App() {
+  const [mode, setMode] = useState<Mode>("intake");
+  const [domain, setDomain] = useState<Domain>("home_health");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<TriageResult | null>(null);
+  const [intakeResult, setIntakeResult] = useState<IntakeResponse | null>(null);
+  const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [caseId, setCaseId] = useState("");
-  const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
 
-  async function handleTranscript(text: string) {
+  async function handleSubmit(data: IntakeSubmitData) {
     setLoading(true);
     setError("");
-    setResult(null);
-    setProgress(INITIAL_PROGRESS);
+    setIntakeResult(null);
+    setTriageResult(null);
+
+    const request = {
+      transcript: data.transcript,
+      language: "en",
+      age_years: data.age_years,
+      age_months: data.age_months,
+      pregnancy: data.pregnancy,
+      mode,
+      domain: mode === "intake" ? domain : undefined,
+    };
+
     try {
-      const response = await streamTriage(
-        { transcript: text, language: "ur" },
-        (event: PipelineEvent) => {
-          const stage = STAGE_PROGRESS[event.stage];
-          if (!stage) return;
-          const isCompleted = event.status === "completed";
-          setProgress((current) => ({
-            percent: isCompleted ? stage.completed : stage.running,
-            label: stage.label,
-            detail: stage.detail,
-            completed:
-              isCompleted &&
-              event.stage !== "done" &&
-              !current.completed.includes(event.stage)
-                ? [...current.completed, event.stage]
-                : current.completed,
-          }));
-        },
-      );
-      setResult(response.result);
-      setCaseId(response.case_id);
+      const resp = await postEncounter(request);
+      if ("extracted" in resp) {
+        setIntakeResult(resp);
+        setCaseId(resp.case_id);
+      } else {
+        setTriageResult(resp.result);
+        setCaseId(resp.case_id);
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -148,40 +93,88 @@ function App() {
       <main id="main-content" className="workspace">
         <section className="hero" aria-labelledby="page-title">
           <div>
-            <p className="eyebrow">Voice-first clinical intake</p>
+            <p className="eyebrow">Voice-first intake &amp; triage</p>
             <h1 id="page-title">
-              Clear next steps,
+              Capture the story,
               <br />
-              when every minute matters.
+              route it to the right human.
             </h1>
           </div>
           <p className="hero-copy">
-            Describe the patient’s symptoms in Urdu or English. MedRoute checks
-            urgent red flags first, then prepares a grounded triage assessment
-            for clinician review.
+            MedRoute is a clinical first-contact platform that turns a
+            caregiver’s voice or typed note into a clean structured record and a
+            clear triage routing decision — running deterministic safety rules
+            before any model does.
           </p>
         </section>
 
-        <section className="intake-layout" aria-label="Patient intake">
+        <section className="intake-layout" aria-label="First contact">
           <div className="intake-card">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">New assessment</p>
+                <p className="eyebrow">New first contact</p>
                 <h2>Patient presentation</h2>
               </div>
               <span className="step-index">01</span>
             </div>
-            <VoiceRecorder onTranscript={handleTranscript} disabled={loading} />
+
+            <div className="controls-row">
+              <div
+                className="mode-toggle"
+                role="group"
+                aria-label="Select mode"
+              >
+                <button
+                  type="button"
+                  className={mode === "intake" ? "is-active" : ""}
+                  aria-pressed={mode === "intake"}
+                  onClick={() => setMode("intake")}
+                >
+                  Intake
+                </button>
+                <button
+                  type="button"
+                  className={mode === "triage" ? "is-active" : ""}
+                  aria-pressed={mode === "triage"}
+                  onClick={() => setMode("triage")}
+                >
+                  Triage
+                </button>
+              </div>
+
+              {mode === "intake" && (
+                <div className="domain-selector">
+                  <label htmlFor="domain">Domain</label>
+                  <select
+                    id="domain"
+                    className="select-field"
+                    value={domain}
+                    onChange={(event) =>
+                      setDomain(event.target.value as Domain)
+                    }
+                  >
+                    <option value="home_health">Home-health</option>
+                    <option value="legal">Legal</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <VoiceRecorder
+              onSubmit={handleSubmit}
+              disabled={loading}
+              submitLabel={mode === "intake" ? "Run intake" : "Run triage"}
+            />
           </div>
 
-          <aside className="process-panel" aria-label="Assessment process">
+          <aside className="process-panel" aria-label="How it works">
             <p className="eyebrow">How it works</p>
             <ol className="process-list">
               <li>
                 <span>1</span>
                 <div>
                   <strong>Capture</strong>
-                  <p>Voice or typed symptoms, age and pregnancy context.</p>
+                  <p>Voice or typed notes, age and pregnancy context.</p>
                 </div>
               </li>
               <li>
@@ -194,9 +187,9 @@ function App() {
               <li>
                 <span>3</span>
                 <div>
-                  <strong>Review</strong>
+                  <strong>Route</strong>
                   <p>
-                    Receive urgency, evidence and an auditable recommendation.
+                    Receive a structured record and a clear routing decision.
                   </p>
                 </div>
               </li>
@@ -225,51 +218,31 @@ function App() {
         </section>
 
         {loading && (
-          <section
-            className="analysis-card"
-            aria-live="polite"
-            aria-label="Assessment in progress"
-          >
+          <section className="analysis-card" aria-live="polite">
             <div className="analysis-header">
               <div>
-                <p className="eyebrow">Assessment in progress</p>
-                <h2>{progress.label}</h2>
-                <p className="progress-detail">{progress.detail}</p>
+                <p className="eyebrow">Processing</p>
+                <h2>Preparing the intake</h2>
+                <p className="progress-detail">
+                  Running the safety screen and structured capture.
+                </p>
               </div>
               <strong className="progress-number">
-                {progress.percent}
-                <small>%</small>
-              </strong>
-            </div>
-            <div
-              className="progress-track"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress.percent}
-            >
-              <span
-                style={{ transform: `scaleX(${progress.percent / 100})` }}
-              />
-            </div>
-            <div className="analysis-steps">
-              {[
-                ["asr", "Input"],
-                ["parser", "Symptoms"],
-                ["safety", "Safety"],
-                ["scorer", "Complexity"],
-                ["agent", "Recommendation"],
-              ].map(([stage, label]) => (
-                <span
-                  key={stage}
-                  className={
-                    progress.completed.includes(stage) ? "complete" : ""
-                  }
+                <svg
+                  viewBox="0 0 24 24"
+                  width="34"
+                  height="34"
+                  fill="none"
+                  aria-hidden="true"
                 >
-                  {progress.completed.includes(stage) ? "✓ " : ""}
-                  {label}
-                </span>
-              ))}
+                  <path
+                    d="M12 3a9 9 0 1 0 9 9"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </strong>
             </div>
           </section>
         )}
@@ -292,24 +265,39 @@ function App() {
               />
             </svg>
             <div>
-              <h3>Assessment could not be completed</h3>
+              <h3>Could not complete the request</h3>
               <p>{error}</p>
             </div>
           </section>
         )}
 
-        {result && (
+        {intakeResult && (
           <section className="result-area" aria-labelledby="result-title">
             <div className="result-area-header">
               <div>
-                <p className="eyebrow">Assessment complete</p>
+                <p className="eyebrow">Intake complete</p>
+                <h2 id="result-title">Structured intake record</h2>
+              </div>
+              <span className="case-reference">
+                Case {caseId.slice(0, 8).toUpperCase()}
+              </span>
+            </div>
+            <IntakeResult data={intakeResult} />
+          </section>
+        )}
+
+        {triageResult && (
+          <section className="result-area" aria-labelledby="result-title">
+            <div className="result-area-header">
+              <div>
+                <p className="eyebrow">Triage complete</p>
                 <h2 id="result-title">Triage summary</h2>
               </div>
               <span className="case-reference">
                 Case {caseId.slice(0, 8).toUpperCase()}
               </span>
             </div>
-            <TriageResultView result={result} />
+            <TriageResultView result={triageResult} />
             <ReportDownload caseId={caseId} />
           </section>
         )}
@@ -321,10 +309,10 @@ function App() {
           <span>MedRoute</span>
         </div>
         <p>
-          Clinical decision support only. Always verify findings with a
-          qualified healthcare professional.
+          Decision support only. Always verify findings with a qualified
+          professional.
         </p>
-        <span>Research prototype · 2026</span>
+        <span>MedRoute · 2026</span>
       </footer>
     </div>
   );

@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 from agents.clinical_heuristics import heuristic_assessment
 from agents.tools.escalate_uncertain import escalate_uncertain
-from agents.tools.openrouter_infer import openrouter_infer
+from agents.tools.inference import InferenceAdapter, OpenRouterInfer
 from agents.tools.rag_search import rag_search
 from config import settings
 from models import (
@@ -233,8 +233,13 @@ def run_triage(
     parsed: ParsedInput,
     score: TriageScore,
     red_flag: RedFlagResult,
+    inference: InferenceAdapter = OpenRouterInfer(),
 ) -> TriageResult:
-    """Run the full triage agent pipeline with deterministic orchestration."""
+    """Run the full triage agent pipeline with deterministic orchestration.
+
+    ``inference`` is the swappable model backend (defaults to the real
+    OpenRouter adapter so production behaviour is unchanged).
+    """
 
     if red_flag.triggered:
         return TriageResult(
@@ -273,12 +278,12 @@ def run_triage(
 
         if step == "openrouter":
             cascade.append("openrouter_infer")
-            payload = context
+            payload = {"context": context}
             if rag_evidence:
-                payload += "\n\nEvidence from guidelines:\n" + "\n".join(
+                payload["context"] += "\n\nEvidence from guidelines:\n" + "\n".join(
                     rag_evidence[:3]
                 )
-            data = _tool_json(openrouter_infer, payload)
+            data = inference.infer(payload)
             if _is_unavailable(data):
                 cascade.append("openrouter_failed")
                 final_route = TriageRoute.OUTAGE_FALLBACK
