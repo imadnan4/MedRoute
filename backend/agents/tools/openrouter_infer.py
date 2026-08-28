@@ -18,6 +18,11 @@ log = logging.getLogger(__name__)
 SYSTEM_PROMPT = """You are an expert medical diagnostician supporting primary-care triage
 in low-resource settings. This is decision support only; a clinician remains responsible.
 
+LANGUAGE RULE (highest priority, non-negotiable): Write EVERY field in clear English only.
+Do NOT use Roman Urdu, Urdu, Hindi, or any other language or transliteration in the output.
+If the patient's words are in Roman Urdu, understand them but always write the assessment in English.
+Example likely_condition (English only): "Possible mild concussion after a fall in an elderly patient".
+
 Return ONLY valid JSON matching this shape:
 {
   "likely_condition": "string — most likely working assessment with brief rationale",
