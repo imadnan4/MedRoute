@@ -14,9 +14,10 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Literal, Optional
 
 from agents.triage_agent import run_triage
+from agents.tools.inference import OpenRouterInfer
 from config import settings
 
 # Propagate HuggingFace token to env so all downstream libs (sentence-transformers,
@@ -27,13 +28,15 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from models import TriageResult, TriageRoute
+from models import TriageResult
 from pipeline.complexity_scorer import score_complexity
 from pipeline.input_parser import parse as parse_input
 from pipeline.report_generator import generate_pdf
+from pipeline.triage_pipeline import TriagePipeline
 from pydantic import BaseModel, Field
 from rag.retriever import get_or_create_collection
 from safety.red_flag_checker import check_red_flags
+from safety.distress_checker import check_distress
 from voice.transcriber import Transcript, transcriber
 
 log = logging.getLogger(__name__)
@@ -63,6 +66,15 @@ class TriageRequest(BaseModel):
     pregnancy: Optional[str] = Field(
         None,
         description="Pregnancy status: not_pregnant, pregnant, pregnant_3rd_trimester",
+    )
+
+
+class EncounterRequest(TriageRequest):
+    mode: str = Field(
+        "triage", description="First-contact mode: intake | triage"
+    )
+    domain: Literal["home_health", "legal"] = Field(
+        "home_health", description="Intake variant: home_health | legal"
     )
 
 
@@ -105,121 +117,96 @@ app.add_middleware(
 )
 
 
-def _apply_context_overrides(
-    transcript_text: str, language: str, req: TriageRequest
-) -> Transcript:
-    """Merge explicit age/pregnancy fields into the transcript for the parser."""
-    if req.age_years is None and req.age_months is None and req.pregnancy is None:
-        return Transcript(text=transcript_text, language=language, latency_ms=0)
-
-    user_text = transcript_text
-    if req.age_years is not None:
-        user_text += f" Age: {req.age_years} years"
-    if req.age_months is not None:
-        user_text += f" Age: {req.age_months} months"
-    if req.pregnancy:
-        user_text += f" Pregnancy: {req.pregnancy}"
-    return Transcript(text=user_text, language=language, latency_ms=0)
+_pipeline = TriagePipeline(
+    transcriber=transcriber,
+    parse_input=parse_input,
+    check_red_flags=check_red_flags,
+    check_distress=check_distress,
+    score_complexity=score_complexity,
+    run_triage=run_triage,
+    inference=OpenRouterInfer(),
+)
 
 
-# ------------------------------------------------------------------ #
-# Pipeline runner
-# ------------------------------------------------------------------ #
-def run_pipeline(request: TriageRequest, case_id: str) -> dict:
-    """Execute the full triage pipeline synchronously."""
-    stages: dict = {}
+def _emit(stage: str, status: str, data: dict | None = None):
+    ev = PipelineEvent(stage=stage, status=status, data=data or {})
+    return f"data: {ev.model_dump_json()}\n\n".encode()
 
-    # Stage 0 — Voice / Input
-    if request.audio_b64:
-        try:
-            audio_bytes = base64.b64decode(request.audio_b64)
-            transcript = transcriber.transcribe_bytes(audio_bytes)
-            stages["asr"] = {
-                "status": "completed",
-                "text": transcript.text,
-                "language": transcript.language,
-                "latency_ms": transcript.latency_ms,
+
+def _sse_on_stage(events: list[bytes], name: str, status: str, payload: dict) -> None:
+    """Translate a pipeline stage transition into the original SSE event shape."""
+    data: dict = payload
+    if status == "completed":
+        if name == "asr":
+            data = {"text": payload.get("text"), "language": payload.get("language")}
+        elif name == "parser":
+            data = {
+                "symptoms": payload.get("symptoms"),
+                "clusters": payload.get("clusters"),
+                "age": payload.get("age"),
             }
-            log.info(
-                "ASR transcribed %d chars in %dms",
-                len(transcript.text),
-                transcript.latency_ms,
-            )
-        except Exception as exc:
-            log.warning("ASR failed, falling back to text input: %s", exc)
-            transcript = transcriber.transcribe_text(
-                request.transcript, request.language
-            )
-            stages["asr"] = {
-                "status": "completed",
-                "text": transcript.text,
-                "language": transcript.language,
-                "fallback": True,
+        elif name == "safety":
+            data = {
+                "triggered": payload.get("triggered"),
+                "flag_class": payload.get("flag_class"),
+                "matched": payload.get("matched"),
             }
-    else:
-        transcript = transcriber.transcribe_text(request.transcript, request.language)
-        stages["asr"] = {
-            "status": "completed",
-            "text": transcript.text,
-            "language": transcript.language,
-        }
+        elif name == "scorer":
+            data = {
+                "score": payload.get("adjusted_score"),
+                "confidence": payload.get("confidence"),
+                "route": payload.get("route"),
+                "syndrome_hits": payload.get("syndrome_hits"),
+            }
+        elif name == "agent":
+            data = {
+                "route": payload.get("route"),
+                "condition": payload.get("likely_condition"),
+                "urgency": payload.get("urgency"),
+                "cascade": payload.get("cascade"),
+            }
+        elif name == "done":
+            data = payload
+    events.append(_emit(name, status, data))
 
-    transcript = _apply_context_overrides(transcript.text, request.language, request)
 
-    # Stage 1 — Input Parser
-    parsed = parse_input(transcript)
-    stages["parser"] = {
-        "status": "completed",
-        "symptoms": parsed.symptoms,
-        "clusters": parsed.symptom_clusters,
-        "age": parsed.patient.age_for_display,
-        "pregnancy": parsed.patient.pregnancy.value,
-        "duration_days": parsed.patient.duration_days,
+def _encounter_to_dict(encounter: "Encounter") -> dict:
+    """Serialize an intake-mode ``Encounter`` dataclass to a JSON-safe dict."""
+    return {
+        "mode": encounter.mode,
+        "input_mode": encounter.input_mode,
+        "input_language": encounter.input_language,
+        "raw_transcript": encounter.raw_transcript,
+        "red_flag": encounter.red_flag.model_dump() if encounter.red_flag else None,
+        "distress": encounter.distress.to_dict() if encounter.distress else None,
+        "acuity": encounter.acuity.value if encounter.acuity else None,
+        "disposition": encounter.disposition.value,
+        "extracted": encounter.extracted,
+        "case_id": encounter.case_id,
+        "needs_human_review": encounter.needs_human_review,
+        "domain": encounter.domain,
     }
 
-    # Stage 2 — Safety Pre-Check (hard override before any LLM)
-    red_flag = check_red_flags(parsed)
-    stages["safety"] = {"status": "completed", "triggered": red_flag.triggered}
-    if red_flag.triggered:
-        stages["safety"]["flag_class"] = red_flag.flag_class
-        stages["safety"]["message"] = red_flag.message
-        stages["safety"]["matched"] = red_flag.matched_symptoms
 
-    # Stage 3 — Complexity Scorer
-    score = score_complexity(parsed)
-    stages["scorer"] = {
-        "status": "completed",
-        "raw_score": score.raw_score,
-        "adjusted_score": score.adjusted_score,
-        "confidence": score.confidence,
-        "route": score.route.value,
-        "syndrome_hits": score.syndrome_hits,
-        "reasoning": score.reasoning,
-    }
+def _build_triage_store(req: object, case_id: str, on_stage=None) -> dict:
+    """Run a triage-mode encounter and assemble the persisted store entry.
 
-    if red_flag.triggered:
-        score.route = TriageRoute.HARD_ESCALATION
-
-    # Stage 4 — Deterministic triage orchestrator
-    result = run_triage(parsed, score, red_flag)
-    stages["agent"] = {
-        "status": "completed",
-        "route": result.route.value,
-        "likely_condition": result.likely_condition,
-        "urgency": result.urgency.value,
-        "cascade": result.cascade_used,
-        "confidence": result.confidence,
-        "confidence_level": result.confidence_level.value,
-    }
-
+    Shared by ``/triage`` and ``/encounter`` (triage mode) so the two routes stay
+    behaviour-identical. The returned dict's ``result`` now carries the unified
+    ``acuity`` and ``disposition`` fields.
+    """
+    outcome = _pipeline.run(req, case_id, mode="triage", on_stage=on_stage)
     store_entry = {
-        "case_id": case_id,
-        "request": request.model_dump(),
-        "stages": stages,
-        "result": result.model_dump(),
+        "case_id": outcome.case_id,
+        "request": outcome.request,
+        "stages": outcome.stages,
+        "result": outcome.result.model_dump(),
         "pdf_bytes": None,
     }
-    _triage_store[case_id] = store_entry
+    result_obj = TriageResult(**store_entry["result"])
+    pdf_bytes = generate_pdf(result_obj)
+    store_entry["pdf_bytes"] = pdf_bytes
+    store_entry.pop("pdf_bytes", None)
     return store_entry
 
 
@@ -231,12 +218,41 @@ async def triage_post(req: TriageRequest):
     """Run the full triage pipeline and return structured result."""
     case_id = str(uuid.uuid4())
     try:
-        entry = run_pipeline(req, case_id)
-        result_obj = TriageResult(**entry["result"])
-        pdf_bytes = generate_pdf(result_obj)
-        _triage_store[case_id]["pdf_bytes"] = pdf_bytes
-        entry.pop("pdf_bytes", None)
-        return JSONResponse(content=entry, status_code=200)
+        store_entry = _build_triage_store(req, case_id)
+        _triage_store[case_id] = store_entry
+        return JSONResponse(content=store_entry, status_code=200)
+    except Exception as exc:
+        log.exception("Pipeline error for case %s", case_id)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/encounter")
+async def encounter_post(req: EncounterRequest):
+    """Unified first-contact endpoint: runs intake OR triage by ``mode``.
+
+    Accepts the same request shape as ``/triage`` (text or base64 audio) plus a
+    ``mode`` field (``intake`` | ``triage``, default ``triage``). Returns an
+    ``Encounter`` for intake, or the triage result (now carrying ``acuity`` and
+    ``disposition``) for triage.
+    """
+    case_id = str(uuid.uuid4())
+    try:
+        if req.mode == "intake":
+            encounter = _pipeline.run(req, case_id, mode="intake", domain=req.domain)
+            body = _encounter_to_dict(encounter)
+            _triage_store[case_id] = {
+                "case_id": case_id,
+                "request": req.model_dump(),
+                "stages": {},
+                "result": body,
+                "pdf_bytes": None,
+            }
+            return JSONResponse(content=body, status_code=200)
+
+        store_entry = _build_triage_store(req, case_id)
+        store_entry["mode"] = "triage"
+        _triage_store[case_id] = store_entry
+        return JSONResponse(content=store_entry, status_code=200)
     except Exception as exc:
         log.exception("Pipeline error for case %s", case_id)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -262,85 +278,96 @@ async def triage_stream(
         )
         case_id = str(uuid.uuid4())
 
-        def _emit(stage: str, status: str, data: dict | None = None):
-            ev = PipelineEvent(stage=stage, status=status, data=data or {})
-            return f"data: {ev.model_dump_json()}\n\n".encode()
+        events: list[bytes] = []
+
+        def _on_stage(name: str, status: str, payload: dict) -> None:
+            _sse_on_stage(events, name, status, payload)
 
         try:
-            yield _emit("asr", "running")
-            t = transcriber.transcribe_text(transcript, language)
-            yield _emit("asr", "completed", {"text": t.text, "language": t.language})
+            outcome = _pipeline.run(req, case_id, on_stage=_on_stage)
 
-            t = _apply_context_overrides(t.text, language, req)
-
-            yield _emit("parser", "running")
-            parsed = parse_input(t)
-            yield _emit(
-                "parser",
-                "completed",
-                {
-                    "symptoms": parsed.symptoms,
-                    "clusters": parsed.symptom_clusters,
-                    "age": parsed.patient.age_for_display,
-                },
-            )
-
-            yield _emit("safety", "running")
-            red_flag = check_red_flags(parsed)
-            yield _emit(
-                "safety",
-                "completed",
-                {
-                    "triggered": red_flag.triggered,
-                    "flag_class": red_flag.flag_class,
-                    "matched": red_flag.matched_symptoms,
-                },
-            )
-
-            yield _emit("scorer", "running")
-            score = score_complexity(parsed)
-            yield _emit(
-                "scorer",
-                "completed",
-                {
-                    "score": score.adjusted_score,
-                    "confidence": score.confidence,
-                    "route": score.route.value,
-                    "syndrome_hits": score.syndrome_hits,
-                },
-            )
-
-            if red_flag.triggered:
-                score.route = TriageRoute.HARD_ESCALATION
-
-            yield _emit("agent", "running")
-            result = run_triage(parsed, score, red_flag)
-            yield _emit(
-                "agent",
-                "completed",
-                {
-                    "route": result.route.value,
-                    "condition": result.likely_condition,
-                    "urgency": result.urgency.value,
-                    "cascade": result.cascade_used,
-                },
-            )
-
-            # Persist for PDF download
+            # Persist for PDF download (SSE path historically stored no stages)
             _triage_store[case_id] = {
                 "case_id": case_id,
                 "request": req.model_dump(),
                 "stages": {},
-                "result": result.model_dump(),
+                "result": outcome.result.model_dump(),
                 "pdf_bytes": None,
             }
-
-            yield _emit(
-                "done", "completed", {"case_id": case_id, "result": result.model_dump()}
-            )
-
         except Exception as exc:
-            yield _emit("error", "error", {"message": str(exc)})
+            events.append(_emit("error", "error", {"message": str(exc)}))
+
+        for ev in events:
+            yield ev
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/encounter/stream")
+async def encounter_stream(
+    transcript: str = Query(..., description="Patient transcript"),
+    language: str = Query("hi-IN"),
+    age_years: Optional[float] = Query(None),
+    age_months: Optional[float] = Query(None),
+    pregnancy: Optional[str] = Query(None),
+    mode: str = Query("triage", description="intake | triage"),
+    domain: Literal["home_health", "legal"] = Query(
+        "home_health", description="Intake variant: home_health | legal"
+    ),
+):
+    """SSE endpoint mirroring ``/triage/stream`` but with a ``mode`` selector."""
+
+    async def event_stream() -> AsyncGenerator[bytes, None]:
+        req = EncounterRequest(
+            transcript=transcript,
+            language=language,
+            age_years=age_years,
+            age_months=age_months,
+            pregnancy=pregnancy,
+            mode=mode,
+            domain=domain,
+        )
+        case_id = str(uuid.uuid4())
+
+        events: list[bytes] = []
+
+        def _on_stage(name: str, status: str, payload: dict) -> None:
+            _sse_on_stage(events, name, status, payload)
+
+        try:
+            if mode == "intake":
+                encounter = _pipeline.run(
+                    req, case_id, mode="intake", on_stage=_on_stage, domain=domain
+                )
+                _triage_store[case_id] = {
+                    "case_id": case_id,
+                    "request": req.model_dump(),
+                    "stages": {},
+                    "result": _encounter_to_dict(encounter),
+                    "pdf_bytes": None,
+                }
+            else:
+                outcome = _pipeline.run(req, case_id, mode="triage", on_stage=_on_stage)
+                _triage_store[case_id] = {
+                    "case_id": case_id,
+                    "request": req.model_dump(),
+                    "stages": {},
+                    "result": outcome.result.model_dump(),
+                    "pdf_bytes": None,
+                }
+        except Exception as exc:
+            events.append(_emit("error", "error", {"message": str(exc)}))
+
+        for ev in events:
+            yield ev
 
     return StreamingResponse(
         event_stream(),

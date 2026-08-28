@@ -1,0 +1,74 @@
+[
+  {
+    "domain": "home_health",
+    "language": "en",
+    "transcript": "My mother needs wound care at home, she has a leg ulcer that needs dressing twice a week.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "home_health",
+    "language": "en",
+    "transcript": "I would like to arrange physiotherapy for my father after his knee replacement surgery.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "home_health",
+    "language": "ur",
+    "transcript": "Meri ammi ko ghar par wound dressing chahiye, unko leg ulcer hai.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "home_health",
+    "language": "ur",
+    "transcript": "Baba ko knee surgery ke baad physio chahiye, hafte mein do bar.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "home_health",
+    "language": "en",
+    "transcript": "My father has severe chest pain and shortness of breath, it came on suddenly.",
+    "expect_disposition": "escalate_to_clinician"
+  },
+  {
+    "domain": "home_health",
+    "language": "en",
+    "transcript": "I can't cope anymore, my mother is being neglected at home and I don't know what to do.",
+    "expect_disposition": "escalate_to_clinician"
+  },
+  {
+    "domain": "legal",
+    "language": "en",
+    "transcript": "I need advice about a custody arrangement for my two children after my separation.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "legal",
+    "language": "en",
+    "transcript": "I would like guidance on making a will and the probate process for my late father.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "legal",
+    "language": "ur",
+    "transcript": "Mujhe will banana hai aur probate ka legal advice chahiye.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "legal",
+    "language": "ur",
+    "transcript": "Mera boss ne salary nahi di, maine labour court jana hai, madad chahiye.",
+    "expect_disposition": "standard_queue"
+  },
+  {
+    "domain": "legal",
+    "language": "en",
+    "transcript": "I am afraid of my husband, he is controlling my money and threatening me at home.",
+    "expect_disposition": "escalate_to_clinician"
+  },
+  {
+    "domain": "legal",
+    "language": "en",
+    "transcript": "My landlord served eviction papers, I need someone now or my kids and I will be homeless.",
+    "expect_disposition": "escalate_to_clinician"
+  }
+]

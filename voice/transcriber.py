@@ -3,7 +3,9 @@
 Priority (``MEDROUTE_ASR_MODE``):
   - ``local``  — Whisper Large V3 Turbo via faster-whisper
   - ``remote`` — HTTP ASR server (``MEDROUTE_ASR_SERVER_URL``)
-  - ``auto``   — local if model is available, else remote; on failure, try the other
+  - ``hf``     — HuggingFace hosted Inference API (no local GPU/RAM)
+  - ``groq``   — Groq Whisper (whisper-large-v3-turbo), ``MEDROUTE_GROQ_API_KEY``
+  - ``auto``   — prefer groq if key set, else local/hf/remote
 
 Typed text uses ``transcribe_text()`` (no ASR).
 """
@@ -45,7 +47,7 @@ class Transcriber:
 
     def _mode(self) -> str:
         mode = (getattr(settings, "asr_mode", None) or "auto").strip().lower()
-        if mode not in {"auto", "local", "remote", "hf"}:
+        if mode not in {"auto", "local", "remote", "hf", "groq"}:
             return "auto"
         return mode
 
@@ -85,6 +87,46 @@ class Transcriber:
             language=language or "auto",
             latency_ms=latency,
             source="hf",
+        )
+
+    def _transcribe_groq(self, audio_bytes: bytes, language: str) -> Transcript:
+        """Transcribe via Groq Whisper (whisper-large-v3-turbo).
+
+        OpenAI-compatible audio transcription endpoint. No local GPU/RAM needed.
+        Docs: https://console.groq.com/docs/audio
+        """
+        if not settings.groq_api_key:
+            raise RuntimeError(
+                "Groq API key not set. Add MEDROUTE_GROQ_API_KEY to .env."
+            )
+
+        model = getattr(settings, "groq_asr_model", None) or "whisper-large-v3-turbo"
+        url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        payload: dict = {"model": model}
+        if language and language != "auto":
+            payload["language"] = language
+
+        t0 = time.perf_counter()
+        resp = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+            files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+            data=payload,
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        latency = int((time.perf_counter() - t0) * 1000)
+        text = (data.get("text") or "").strip()
+        if language and language.lower().startswith("ur"):
+            from voice.roman_urdu import prefer_clinic_transcript
+
+            text = prefer_clinic_transcript(text, language=language)
+        return Transcript(
+            text=text,
+            language=language or "auto",
+            latency_ms=latency,
+            source="groq",
         )
 
     def _transcribe_remote(
@@ -178,7 +220,11 @@ class Transcriber:
             order = ["remote"]
         elif mode == "hf":
             order = ["hf"]
-        else:  # auto: prefer local, then HF (free), then custom remote
+        elif mode == "groq":
+            order = ["groq"]
+        else:  # auto: prefer groq if configured, then local/hf/remote
+            if getattr(settings, "groq_api_key", None):
+                order.append("groq")
             if local_ok:
                 order.append("local")
             if hf_ok:
@@ -196,6 +242,9 @@ class Transcriber:
                 elif backend == "hf":
                     log.info("ASR: using HuggingFace Inference API")
                     return self._transcribe_hf(audio_bytes, language)
+                elif backend == "groq":
+                    log.info("ASR: using Groq Whisper (%s)", settings.groq_asr_model)
+                    return self._transcribe_groq(audio_bytes, language)
                 log.info("ASR: using remote server %s", settings.asr_server_url)
                 return self._transcribe_remote(audio_bytes, sample_rate, language)
             except Exception as exc:

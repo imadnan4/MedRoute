@@ -1,6 +1,6 @@
 """Rule-based clinical templates for offline / cascade fallback.
 
-Used when LLMs are unavailable so demo scenarios and low-resource clinics still
+Used when LLMs are unavailable so sample scenarios and low-resource clinics still
 get structured, safe guidance. Never replaces red-flag hard escalation.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ def heuristic_assessment(parsed: ParsedInput) -> dict:
     age = parsed.patient.age_years
     duration = parsed.patient.duration_days
 
-    # --- B-symptoms / constitutional (demo C: lymphoma/TB territory) ---
+    # --- B-symptoms / constitutional (sample C: lymphoma/TB territory) ---
     if "b_symptoms" in clusters or (
         {"weight_loss", "night_sweats"} <= symptoms
         or ({"weight_loss", "fatigue"} <= symptoms and (duration or 0) >= 14)
@@ -46,7 +46,7 @@ def heuristic_assessment(parsed: ParsedInput) -> dict:
             "urgency": UrgencyLevel.URGENT.value,
         }
 
-    # --- Viral URI pattern (demo A) ---
+    # --- Viral URI pattern (sample A) ---
     if "viral_uri" in clusters or (
         len(symptoms & {"cold", "cough", "fever", "sore_throat", "headache"}) >= 2
         and not (symptoms & {"chest_pain", "shortness_of_breath", "weight_loss", "night_sweats"})
@@ -151,7 +151,7 @@ def heuristic_assessment(parsed: ParsedInput) -> dict:
             "urgency": UrgencyLevel.SOON.value,
         }
 
-    # --- Vague / low information (demo D) ---
+    # --- Vague / low information (sample D) ---
     if not symptoms or symptoms.issubset({"fatigue"}) or (
         len(symptoms) <= 1 and "fatigue" in symptoms
     ):

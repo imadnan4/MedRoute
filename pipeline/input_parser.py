@@ -11,87 +11,9 @@ import re
 
 from models import ParsedInput, PatientContext, PregnancyStatus
 from voice.transcriber import Transcript
+from clinical_knowledge import SYMPTOM_LEXICON, SYNDROME_CLUSTERS
 
 log = logging.getLogger(__name__)
-
-# Symptom lexicon (English + romanized Urdu/Hindi). Keys feed scorer + red flags.
-SYMPTOM_LEXICON: dict[str, list[str]] = {
-    "fever": ["bukhar", "fever", "tap", "jwar", "temperature", "pyrexia"],
-    "cough": ["khansi", "cough", "khaansi"],
-    "cold": ["zukam", "cold", "nasal", "sneeze", "runny nose", "congestion"],
-    "headache": ["sar dard", "headache", "sir dard", "sirdard", "head pain"],
-    "severe_headache": ["thunderclap", "worst headache", "sudden severe headache", "sab se zyada sar dard"],
-    "chest_pain": ["chest pain", "chati dard", "chest tightness", "seena dard", "chest pressure"],
-    "arm_pain": ["arm pain", "haath dard", "left arm", "bazoo dard", "jaw pain", "radiation to arm"],
-    "sweating": ["sweating", "paseena", "diaphoresis", "pasina", "cold sweat"],
-    "shortness_of_breath": [
-        "dyspnea", "saans", "breathless", "saans lena", "shortness of breath",
-        "can't breathe", "difficulty breathing", "saans phoolna",
-    ],
-    "fatigue": ["fatigue", "thakaan", "weakness", "kamzor", "tired", "feel off", "something is wrong"],
-    "weight_loss": ["weight loss", "wazan kam", "weight kam", "losing weight"],
-    "night_sweats": ["night sweats", "raat paseena", "night sweat"],
-    "lymph_node_swelling": ["lymph", "gland", "gland swelling", "lymph node", "swollen nodes"],
-    "abdominal_pain": ["stomach pain", "pet dard", "abdominal pain", "belly", "pet mein dard"],
-    "vomiting": ["vomiting", "ulti", "nausea", "ulta", "throwing up"],
-    "diarrhea": ["diarrhea", "dast", "loose motion", "loose stools"],
-    "rash": ["rash", "chhap", "skin rash", "dhaal", "hives", "urticaria"],
-    "sore_throat": ["sore throat", "galay dard", "throat pain", "galay mein dard"],
-    "dizziness": ["dizziness", "chakkar", "vertigo", "lightheaded", "faint"],
-    "bleeding": ["bleeding", "khoon", "haemorrhage", "hemorrhage", "blood", "vaginal bleeding"],
-    "infant_fever": ["infant fever", "baby fever", "baccha bukhar", "newborn fever"],
-    # Neuro / FAST stroke keys
-    "facial_droop": ["facial droop", "face droop", "crooked smile", "face asymmetry", "chehre ka jhukna", "half face"],
-    "speech_difficulty": ["slurred speech", "can't speak", "speech difficulty", "aphasia", "bolne mein mushkil", "slurred"],
-    "unilateral_weakness": ["arm weakness", "leg weakness", "one side weak", "hemiparesis", "left side weak", "right side weak", "paralysis"],
-    "confusion": ["confused", "confusion", "altered mental", "disoriented", "not making sense", "behosh"],
-    # Respiratory severity
-    "stridor": ["stridor", "noisy breathing", "wheeze severe"],
-    "cyanosis": ["cyanosis", "blue lips", "blue face", "neele hont"],
-    # Allergic / anaphylaxis
-    "swelling_face_throat": ["face swelling", "throat swelling", "angioedema", "swollen tongue", "galay soojna"],
-    "syncope": ["passed out", "fainted", "syncope", "collapse", "behosh ho gaya"],
-    # Meningitis / CNS infection
-    "neck_stiffness": ["neck stiffness", "stiff neck", "can't bend neck", "nuchal", "gardan sakht", "gardan mein dard"],
-    "photophobia": ["photophobia", "light hurts eyes", "sensitive to light", "roshni se dard"],
-    # Seizure
-    "seizure": ["seizure", "fit", "convulsion", "shaking spell", "dore", "mirgi ka daura", "tonic clonic"],
-    # GI bleed
-    "hematemesis": ["vomiting blood", "vomited blood", "hematemesis", "khoon ulti", "coffee ground"],
-    "melena": ["black stool", "tarry stool", "melena", "kala stool", "black poop"],
-    "rectal_bleeding": ["bloody stool", "rectal bleeding", "blood in stool", "stool mein khoon"],
-    # PE / DVT signals
-    "leg_swelling": ["leg swelling", "swollen calf", "one leg swollen", "calf pain", "dvt"],
-    "hemoptysis": ["coughing blood", "blood in sputum", "hemoptysis", "khoon khansi"],
-    # Trauma / head injury
-    "head_injury": ["head injury", "hit head", "fell on head", "sar mein chot", "trauma head"],
-    "loss_of_consciousness": ["lost consciousness", "knocked out", "unconscious", "behosh ho gaya tha"],
-    # Mental health crisis
-    "suicidal_ideation": [
-        "want to die", "kill myself", "suicide", "suicidal", "end my life",
-        "self harm", "hurt myself", "no reason to live",
-    ],
-    # Diabetic emergency
-    "polyuria": ["urinating a lot", "frequent urination", "polyuria", "zyada peshab"],
-    "polydipsia": ["very thirsty", "extreme thirst", "polydipsia", "bohot pyas"],
-    # Pediatric severe illness cues
-    "poor_feeding": ["not feeding", "poor feeding", "won't eat", "not taking milk", "doodh nahi le raha"],
-    "lethargy_child": ["floppy baby", "very sleepy baby", "won't wake", "lethargic infant"],
-}
-
-# Clinical syndrome clusters for scoring (not red flags by themselves)
-SYNDROME_CLUSTERS: dict[str, set[str]] = {
-    "viral_uri": {"cold", "cough", "fever", "sore_throat", "headache"},
-    "b_symptoms": {"fever", "night_sweats", "weight_loss", "fatigue", "lymph_node_swelling"},
-    "acs_constellation": {"chest_pain", "arm_pain", "sweating", "shortness_of_breath", "dizziness"},
-    "gi_illness": {"vomiting", "diarrhea", "abdominal_pain", "fever"},
-    "neuro_acute": {"facial_droop", "speech_difficulty", "unilateral_weakness", "severe_headache", "confusion", "seizure"},
-    "respiratory_distress": {"shortness_of_breath", "stridor", "cyanosis", "chest_pain"},
-    "meningitis_constellation": {"fever", "severe_headache", "neck_stiffness", "photophobia", "confusion", "rash"},
-    "pe_constellation": {"shortness_of_breath", "chest_pain", "leg_swelling", "hemoptysis", "syncope"},
-    "gi_bleed": {"hematemesis", "melena", "rectal_bleeding", "dizziness", "fatigue", "syncope"},
-    "dka_constellation": {"polyuria", "polydipsia", "vomiting", "fatigue", "confusion", "abdominal_pain"},
-}
 
 AGE_PATTERNS = [
     re.compile(r"(\d+(?:\.\d+)?)\s*(?:year|yr|saal|sal)\s*(?:old)?", re.I),

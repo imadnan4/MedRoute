@@ -123,12 +123,12 @@ def _response_content(payload: dict[str, Any]) -> str:
     return content
 
 
-@tool
-def openrouter_infer(symptoms_and_context: str) -> str:
+def infer_text(symptoms_and_context: str) -> str:
     """Run medical decision-support inference through OpenRouter.
 
     Input is patient context plus optional retrieved evidence. Output is a JSON
-    assessment, or a machine-readable unavailable status for the safe fallback.
+    assessment string, or a machine-readable unavailable status for the safe
+    fallback.
     """
     if not settings.openrouter_api_key:
         return _unavailable("MEDROUTE_OPENROUTER_API_KEY is not set")
@@ -224,3 +224,9 @@ def openrouter_infer(symptoms_and_context: str) -> str:
             )
 
     return _unavailable(last_error)
+
+
+@tool
+def openrouter_infer(symptoms_and_context: str) -> str:
+    """LangChain tool wrapper — delegates to :func:`infer_text`."""
+    return infer_text(symptoms_and_context)
