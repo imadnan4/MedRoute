@@ -437,7 +437,7 @@ async def health():
     return {
         "status": "ok",
         "service": "MedRoute",
-        "version": "1.1.0",
+        "version": "1.1.1",
         "architecture": "deterministic_orchestrator_v1",
     }
 
