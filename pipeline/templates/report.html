@@ -178,7 +178,7 @@
         <tr><td class="k">Age / pregnancy</td><td>{{ patient.age_for_display }}{% if patient.pregnancy %} · {{ patient.pregnancy.value }}{% endif %}</td></tr>
         <tr><td class="k">Duration of symptoms</td><td>{{ patient.duration_days if patient.duration_days is not none else "not stated" }}{% if patient.duration_days is not none %} day(s){% endif %}</td></tr>
         <tr><td class="k">Triage confidence</td><td>{{ result.confidence_level.value }} <span class="badge {{ badge_class }}">{{ "%.0f"|format(result.confidence*100) }}%</span></td></tr>
-        <tr><td class="k">Escalate to clinician</td><td>{% if is_red_flag %}YES{% else %}No{% endif %}</td></tr>
+        <tr><td class="k">Escalate to clinician</td><td>{% if is_red_flag or result.route.value == "escalation_bias" %}YES{% else %}No{% endif %}</td></tr>
       </table>
     </section>
 
@@ -213,8 +213,8 @@
     <section>
       <h2>Decision-support audit trail</h2>
       <ul class="evi">
-        <li>Model confidence: {{ result.model_confidence if result.model_confidence is not none else "—" }}</li>
-        <li>Scorer confidence: {{ result.scorer_confidence if result.scorer_confidence is not none else "—" }}</li>
+        <li>Model confidence: {{ "%.2f"|format(result.model_confidence) if result.model_confidence is not none else "—" }}</li>
+        <li>Scorer confidence: {{ "%.2f"|format(result.scorer_confidence) if result.scorer_confidence is not none else "—" }}</li>
         <li>Escalation bias applied: {% if result.route.value == "escalation_bias" %}Yes{% else %}No{% endif %}</li>
         <li>Route: {{ result.route.value | replace("_", " ") }}</li>
         <li>Cascade used: {{ result.cascade_used|join(", ") if result.cascade_used else "—" }}</li>
