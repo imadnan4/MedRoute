@@ -1,568 +1,258 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <title>MedRoute Clinical Triage Report</title>
-        <style>
-            @page {
-                size: A4;
-                margin: 1.45cm 1.55cm 1.65cm;
-                @top-right {
-                    content: "CONFIDENTIAL · CLINICAL DECISION SUPPORT";
-                    font-family: "DejaVu Sans", sans-serif;
-                    font-size: 6.5pt;
-                    letter-spacing: 0.11em;
-                    color: #8b8f8b;
-                }
-                @bottom-left {
-                    content: "MedRoute · {{ report_date }}";
-                    font-family: "DejaVu Sans", sans-serif;
-                    font-size: 7pt;
-                    color: #8b8f8b;
-                }
-                @bottom-right {
-                    content: "Page " counter(page) " of " counter(pages);
-                    font-family: "DejaVu Sans", sans-serif;
-                    font-size: 7pt;
-                    color: #8b8f8b;
-                }
-            }
+  <head>
+    <meta charset="UTF-8" />
+    <title>MedRoute Clinical Triage Report</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 1.4cm 1.5cm 1.6cm;
+        @top-right {
+          content: "CONFIDENTIAL · CLINICAL DECISION SUPPORT";
+          font-family: "DejaVu Sans", sans-serif;
+          font-size: 6.5pt;
+          letter-spacing: 0.11em;
+          color: #8b8f8b;
+        }
+        @bottom-left {
+          content: "MedRoute · {{ report_date }}";
+          font-family: "DejaVu Sans", sans-serif;
+          font-size: 7pt;
+          color: #8b8f8b;
+        }
+        @bottom-right {
+          content: "Page " counter(page) " of " counter(pages);
+          font-family: "DejaVu Sans", sans-serif;
+          font-size: 7pt;
+          color: #8b8f8b;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: #202521;
+        font-family: "DejaVu Sans", Arial, sans-serif;
+        font-size: 9.4pt;
+        line-height: 1.55;
+      }
+      p, h1, h2, h3, ul, table { margin: 0; }
+      .eyebrow {
+        font-family: "DejaVu Sans Mono", monospace;
+        font-size: 6.4pt;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #7d837e;
+      }
+      .brand-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        border-bottom: 1.5px solid #202521;
+        padding-bottom: 7px;
+        margin-bottom: 11px;
+      }
+      .brand-header .brand {
+        font-weight: 700;
+        font-size: 14pt;
+        letter-spacing: 0.01em;
+      }
+      .brand-header .doc-title {
+        font-size: 9.5pt;
+        color: #4a4f4a;
+      }
+      .brand-header .meta {
+        font-family: "DejaVu Sans Mono", monospace;
+        font-size: 7.2pt;
+        color: #6b706b;
+        text-align: right;
+      }
+      .urgency-band {
+        border-radius: 5px;
+        padding: 9px 12px;
+        margin: 4px 0 12px;
+        color: #fff;
+      }
+      .urgency-emergency { background: #9b1c1c; }
+      .urgency-urgent { background: #b45309; }
+      .urgency-soon { background: #9a7b17; }
+      .urgency-routine { background: #2f6b3f; }
+      .urgency-band .urgency-label {
+        display: block;
+        font-weight: 700;
+        font-size: 11pt;
+        letter-spacing: 0.01em;
+      }
+      .urgency-band .urgency-sub {
+        display: block;
+        font-size: 8.6pt;
+        opacity: 0.95;
+        margin-top: 1px;
+      }
+      .alert-banner {
+        background: #fbe9e7;
+        border: 1px solid #c0392b;
+        color: #7b1d12;
+        border-radius: 5px;
+        padding: 8px 11px;
+        font-weight: 600;
+        font-size: 9pt;
+        margin-bottom: 11px;
+      }
+      section { margin-bottom: 11px; }
+      h2 {
+        font-size: 9.6pt;
+        font-weight: 700;
+        color: #2c302c;
+        border-bottom: 1px solid #d9ddd6;
+        padding-bottom: 3px;
+        margin-bottom: 5px;
+      }
+      .quote {
+        background: #f5f6f3;
+        border-left: 3px solid #c9cdc4;
+        padding: 6px 10px;
+        font-style: italic;
+        color: #3a3f3a;
+        white-space: pre-wrap;
+      }
+      table.snapshot {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 8.8pt;
+      }
+      table.snapshot td {
+        padding: 3px 8px;
+        border: 1px solid #e2e5df;
+        vertical-align: top;
+      }
+      table.snapshot td.k {
+        width: 34%;
+        background: #f7f8f5;
+        color: #5a5f5a;
+        font-weight: 600;
+      }
+      ul { padding-left: 16px; }
+      li { margin-bottom: 2px; }
+      .reasoning {
+        margin-top: 4px;
+        color: #4a4f4a;
+        font-size: 8.8pt;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 7pt;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid #c9cdc4;
+        margin-left: 4px;
+      }
+      .badge-green { background: #e7f1ea; color: #2f6b3f; }
+      .badge-yellow { background: #f7f1dd; color: #9a7b17; }
+      .badge-red { background: #fbe9e7; color: #9b1c1c; }
+      .disclaimer {
+        margin-top: 12px;
+        border-top: 1px solid #d9ddd6;
+        padding-top: 6px;
+        font-size: 7.2pt;
+        color: #7d837e;
+        line-height: 1.45;
+      }
+      .evi { font-size: 8.6pt; color: #3a3f3a; }
+    </style>
+  </head>
+  <body>
+    <header class="brand-header">
+      <div>
+        <span class="brand">MedRoute</span>
+        <span class="doc-title">&nbsp;· Clinical Triage &amp; Handoff Report</span>
+      </div>
+      <div class="meta">
+        Case {{ case_id or "—" }}<br />
+        {{ report_date }}
+      </div>
+    </header>
 
-            * {
-                box-sizing: border-box;
-            }
-            body {
-                margin: 0;
-                color: #202521;
-                font-family: "DejaVu Sans", Arial, sans-serif;
-                font-size: 9.2pt;
-                line-height: 1.55;
-            }
-            p,
-            h1,
-            h2,
-            h3,
-            h4,
-            ul,
-            ol {
-                margin: 0;
-            }
-            .eyebrow {
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 6.4pt;
-                font-weight: 700;
-                letter-spacing: 0.12em;
-                text-transform: uppercase;
-                color: #7d837e;
-            }
+    <div class="urgency-band urgency-{{ result.urgency }}">
+      <span class="urgency-label">{{ urgency_label }}</span>
+      <span class="urgency-sub">Recommended action: {{ disposition_action }}</span>
+    </div>
 
-            .brand-header {
-                display: table;
-                width: 100%;
-                padding-bottom: 15px;
-                border-bottom: 1px solid #d7d9d4;
-            }
-            .brand-cell,
-            .meta-cell {
-                display: table-cell;
-                vertical-align: middle;
-            }
-            .brand-cell {
-                width: 58%;
-            }
-            .brand-lockup {
-                display: table;
-            }
-            .brand-symbol,
-            .brand-name {
-                display: table-cell;
-                vertical-align: middle;
-            }
-            .brand-symbol {
-                width: 28px;
-                height: 28px;
-                border: 1.2px solid #294d3e;
-                border-radius: 50%;
-                color: #294d3e;
-                font-size: 19px;
-                line-height: 25px;
-                text-align: center;
-            }
-            .brand-name {
-                padding-left: 9px;
-                font-family: Georgia, serif;
-                font-size: 17pt;
-                font-weight: bold;
-                letter-spacing: -0.04em;
-            }
-            .meta-cell {
-                text-align: right;
-            }
-            .meta-cell strong {
-                display: block;
-                margin-top: 3px;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 7.5pt;
-                font-weight: 400;
-                color: #414842;
-            }
+    {% if is_red_flag %}
+    <div class="alert-banner">
+      ⚠ RED FLAG — escalate to a clinician now. {{ red_flag_message }}
+    </div>
+    {% endif %}
 
-            .title-block {
-                display: table;
-                width: 100%;
-                padding: 22px 0 19px;
-            }
-            .title-copy,
-            .confidence-cell {
-                display: table-cell;
-                vertical-align: bottom;
-            }
-            .title-copy {
-                width: 75%;
-            }
-            .title-copy .eyebrow {
-                color: #294d3e;
-                margin-bottom: 6px;
-            }
-            .title-copy h1 {
-                max-width: 520px;
-                font-family: Georgia, serif;
-                font-size: 25pt;
-                line-height: 1.1;
-                font-weight: normal;
-                letter-spacing: -0.035em;
-            }
-            .confidence-cell {
-                text-align: right;
-            }
-            .confidence-box {
-                display: inline-block;
-                min-width: 92px;
-                padding: 9px 12px;
-                border-radius: 5px;
-                text-align: center;
-            }
-            .confidence-box span {
-                display: block;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 5.8pt;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-            }
-            .confidence-box strong {
-                display: block;
-                margin: 2px 0;
-                font-family: Georgia, serif;
-                font-size: 24pt;
-                line-height: 1;
-                font-weight: normal;
-            }
-            .confidence-box em {
-                display: block;
-                font-size: 5.8pt;
-                font-style: normal;
-                font-weight: bold;
-                letter-spacing: 0.09em;
-                text-transform: uppercase;
-            }
-            .badge-green {
-                background: #e5eee8;
-                color: #294d3e;
-            }
-            .badge-yellow {
-                background: #f4ecd9;
-                color: #805d1c;
-            }
-            .badge-red {
-                background: #f5e5e2;
-                color: #913c39;
-            }
+    <section>
+      <h2>1 · Presenting complaint</h2>
+      <p class="quote">{{ transcript or "(not recorded)" }}</p>
+    </section>
 
-            .urgent-banner {
-                display: table;
-                width: 100%;
-                margin: 0 0 15px;
-                padding: 11px 14px;
-                border: 1px solid #dfbbb6;
-                border-left: 4px solid #913c39;
-                background: #f5e5e2;
-                color: #773b38;
-            }
-            .urgent-banner strong {
-                display: block;
-                margin-bottom: 2px;
-                font-family: Georgia, serif;
-                font-size: 12pt;
-                font-weight: normal;
-                color: #913c39;
-            }
-            .urgent-banner p {
-                font-size: 8pt;
-            }
+    <section>
+      <h2>2 · Patient snapshot</h2>
+      <table class="snapshot">
+        <tr><td class="k">Age / pregnancy</td><td>{{ patient.age_for_display }}{% if patient.pregnancy %} · {{ patient.pregnancy }}{% endif %}</td></tr>
+        <tr><td class="k">Duration of symptoms</td><td>{{ patient.duration_days if patient.duration_days is not none else "not stated" }}{% if patient.duration_days is not none %} day(s){% endif %}</td></tr>
+        <tr><td class="k">Triage confidence</td><td>{{ result.confidence_level.value }} <span class="badge {{ badge_class }}">{{ "%.0f"|format(result.confidence*100) }}%</span></td></tr>
+        <tr><td class="k">Escalate to clinician</td><td>{% if is_red_flag %}YES{% else %}No{% endif %}</td></tr>
+      </table>
+    </section>
 
-            .patient-strip {
-                width: 100%;
-                border-collapse: collapse;
-                table-layout: fixed;
-                background: #f4f3ef;
-                border-top: 1px solid #d7d9d4;
-                border-bottom: 1px solid #d7d9d4;
-            }
-            .patient-strip td {
-                padding: 10px 11px;
-                border-right: 1px solid #d7d9d4;
-                vertical-align: top;
-            }
-            .patient-strip td:last-child {
-                border-right: none;
-            }
-            .patient-strip span {
-                display: block;
-                margin-bottom: 3px;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 5.8pt;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                color: #858a86;
-            }
-            .patient-strip strong {
-                display: block;
-                overflow: hidden;
-                font-size: 7.7pt;
-                font-weight: bold;
-                text-transform: capitalize;
-                white-space: nowrap;
-                text-overflow: ellipsis;
-            }
-            .urgency-emergency,
-            .urgency-urgent {
-                color: #913c39;
-            }
-            .urgency-soon {
-                color: #805d1c;
-            }
-            .urgency-routine {
-                color: #294d3e;
-            }
+    <section>
+      <h2>3 · Clinical assessment</h2>
+      <p><strong>Likely condition:</strong> {{ result.likely_condition }}</p>
+      {% if result.differential %}
+      <p><strong>Differential:</strong></p>
+      <ul>
+        {% for d in result.differential %}<li>{{ d }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if result.reasoning %}
+      <p class="reasoning">{{ result.reasoning }}</p>
+      {% endif %}
+    </section>
 
-            .section {
-                margin-top: 18px;
-                break-inside: avoid;
-            }
-            .section-heading {
-                display: table;
-                width: 100%;
-                margin-bottom: 8px;
-                padding-bottom: 5px;
-                border-bottom: 1px solid #e1e2de;
-            }
-            .section-heading span,
-            .section-heading h2 {
-                display: table-cell;
-                vertical-align: middle;
-            }
-            .section-heading span {
-                width: 25px;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 6pt;
-                color: #929691;
-            }
-            .section-heading h2 {
-                font-size: 8.2pt;
-                font-weight: bold;
-                letter-spacing: 0.01em;
-            }
-            .recommendation {
-                padding: 14px 16px 15px;
-                border-left: 3px solid #294d3e;
-                background: #eef2ef;
-            }
-            .recommendation p {
-                font-family: Georgia, serif;
-                font-size: 11.5pt;
-                line-height: 1.55;
-                color: #303832;
-            }
+    <section>
+      <h2>4 · Recommended action (plan)</h2>
+      <p>{{ result.recommendation }}</p>
+    </section>
 
-            .two-column {
-                display: table;
-                width: 100%;
-                table-layout: fixed;
-                margin-top: 18px;
-            }
-            .column {
-                display: table-cell;
-                width: 50%;
-                vertical-align: top;
-            }
-            .column:first-child {
-                padding-right: 8px;
-            }
-            .column:last-child {
-                padding-left: 8px;
-            }
-            .panel {
-                min-height: 118px;
-                padding: 12px 14px;
-                border: 1px solid #d7d9d4;
-                break-inside: avoid;
-            }
-            .panel-watch {
-                background: #f7f1e4;
-                border-color: #e2d6bc;
-            }
-            .panel h2 {
-                margin-bottom: 8px;
-                font-size: 8pt;
-            }
-            .clean-list {
-                list-style: none;
-                padding: 0;
-            }
-            .clean-list li {
-                position: relative;
-                padding: 5px 0 5px 14px;
-                border-top: 1px solid rgba(70, 75, 71, 0.1);
-                color: #535a55;
-                font-size: 7.8pt;
-            }
-            .clean-list li:first-child {
-                border-top: none;
-            }
-            .clean-list li::before {
-                content: "";
-                position: absolute;
-                top: 10px;
-                left: 1px;
-                width: 4px;
-                height: 4px;
-                background: #778078;
-            }
-            .panel-watch .clean-list li {
-                color: #6c5428;
-            }
-            .panel-watch .clean-list li::before {
-                background: #8a631b;
-                transform: rotate(45deg);
-            }
+    <section>
+      <h2>5 · Safety-netting &amp; warning signs</h2>
+      {% if result.watch_for %}
+      <ul>
+        {% for w in result.watch_for %}<li>{{ w }}</li>{% endfor %}
+      </ul>
+      {% else %}
+      <p>No specific warning signs flagged.</p>
+      {% endif %}
+    </section>
 
-            .red-flag-detail {
-                margin-top: 15px;
-                padding: 11px 14px;
-                border-left: 3px solid #913c39;
-                background: #fbf0ee;
-                color: #754845;
-                break-inside: avoid;
-            }
-            .red-flag-detail h2 {
-                margin: 3px 0 4px;
-                font-family: Georgia, serif;
-                font-size: 11pt;
-                font-weight: normal;
-                text-transform: capitalize;
-                color: #913c39;
-            }
-            .red-flag-detail p {
-                font-size: 7.8pt;
-            }
-
-            .evidence-item {
-                display: table;
-                width: 100%;
-                padding: 8px 0;
-                border-bottom: 1px solid #e1e2de;
-                break-inside: avoid;
-            }
-            .evidence-item:last-child {
-                border-bottom: none;
-            }
-            .evidence-number,
-            .evidence-text {
-                display: table-cell;
-                vertical-align: top;
-            }
-            .evidence-number {
-                width: 25px;
-                padding-top: 1px;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 6.3pt;
-                color: #294d3e;
-            }
-            .evidence-text {
-                color: #5d645f;
-                font-size: 7.4pt;
-                line-height: 1.6;
-            }
-
-            .audit {
-                padding: 10px 12px;
-                background: #f4f3ef;
-                color: #707570;
-                font-family: "DejaVu Sans Mono", monospace;
-                font-size: 6.3pt;
-                line-height: 1.6;
-                white-space: normal;
-                overflow-wrap: anywhere;
-            }
-            .cascade {
-                margin-bottom: 7px;
-                color: #4b534d;
-            }
-            .disclaimer {
-                margin-top: 20px;
-                padding: 10px 12px;
-                border-top: 1px solid #d7d9d4;
-                color: #7d837e;
-                font-size: 6.5pt;
-                line-height: 1.55;
-            }
-        </style>
-    </head>
-    <body>
-        <header class="brand-header">
-            <div class="brand-cell">
-                <div class="brand-lockup">
-                    <span class="brand-symbol">+</span
-                    ><span class="brand-name">MedRoute</span>
-                </div>
-            </div>
-            <div class="meta-cell">
-                <span class="eyebrow">Clinical triage report</span
-                ><strong>{{ report_date }}</strong>
-            </div>
-        </header>
-
-        <section class="title-block">
-            <div class="title-copy">
-                <p class="eyebrow">Working assessment</p>
-                <h1>{{ result.likely_condition }}</h1>
-            </div>
-            <div class="confidence-cell">
-                <div class="confidence-box {{ badge_class }}">
-                    <span>Confidence</span
-                    ><strong
-                        >{{ "%.0f"|format(result.confidence * 100) }}%</strong
-                    ><em>{{ result.confidence_level.value }}</em>
-                </div>
-            </div>
-        </section>
-
-        {% if is_red_flag %}
-        <section class="urgent-banner">
-            <strong>Immediate clinical escalation required</strong>
-            <p>
-                A hard safety rule was triggered. Do not delay care for further
-                automated assessment.
-            </p>
-        </section>
+    <section>
+      <h2>6 · Decision-support audit trail</h2>
+      <ul class="evi">
+        <li>Model confidence: {{ result.model_confidence if result.model_confidence is not none else "—" }}</li>
+        <li>Scorer confidence: {{ result.scorer_confidence if result.scorer_confidence is not none else "—" }}</li>
+        <li>Cascade used: {{ result.cascade_used|join(", ") if result.cascade_used else "—" }}</li>
+        {% if red_flag_matched %}
+        <li>Red-flag matches: {{ red_flag_matched|join(", ") }}</li>
         {% endif %}
-
-        <table class="patient-strip">
-            <tr>
-                <td>
-                    <span>Age</span
-                    ><strong>{{ patient.age_for_display }}</strong>
-                </td>
-                <td>
-                    <span>Pregnancy</span
-                    ><strong
-                        >{{ patient.pregnancy.value | replace("_", " ")
-                        }}</strong
-                    >
-                </td>
-                <td>
-                    <span>Urgency</span
-                    ><strong class="urgency-{{ result.urgency.value }}"
-                        >{{ result.urgency.value }}</strong
-                    >
-                </td>
-                <td>
-                    <span>Route</span
-                    ><strong
-                        >{{ result.route.value | replace("_", " ") }}</strong
-                    >
-                </td>
-            </tr>
-        </table>
-
-        {% if result.red_flag and result.red_flag.triggered %}
-        <section class="red-flag-detail">
-            <p class="eyebrow">Triggered safety rule</p>
-            <h2>{{ result.red_flag.flag_class | replace("_", " ") }}</h2>
-            <p>{{ result.red_flag.message }}</p>
-        </section>
-        {% endif %}
-
-        <section class="section">
-            <div class="section-heading">
-                <span>01</span>
-                <h2>Recommended next step</h2>
-            </div>
-            <div class="recommendation"><p>{{ result.recommendation }}</p></div>
-        </section>
-
-        <div class="two-column">
-            {% if result.differential %}
-            <section class="column">
-                <div class="panel">
-                    <h2>Conditions to consider</h2>
-                    <ul class="clean-list">
-                        {% for d in result.differential %}
-                        <li>{{ d }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </section>
-            {% endif %} {% if result.watch_for %}
-            <section class="column">
-                <div class="panel panel-watch">
-                    <h2>Return immediately if</h2>
-                    <ul class="clean-list">
-                        {% for w in result.watch_for %}
-                        <li>{{ w }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </section>
-            {% endif %}
-        </div>
-
         {% if result.rag_evidence %}
-        <section class="section">
-            <div class="section-heading">
-                <span>02</span>
-                <h2>Guideline evidence used</h2>
-            </div>
-            {% for e in result.rag_evidence %}
-            <div class="evidence-item">
-                <span class="evidence-number"
-                    >{{ "%02d"|format(loop.index) }}</span
-                ><span class="evidence-text">{{ e }}</span>
-            </div>
-            {% endfor %}
-        </section>
+        <li>Retrieved evidence:
+          <ul>
+            {% for e in result.rag_evidence %}<li>{{ e }}</li>{% endfor %}
+          </ul>
+        </li>
         {% endif %}
+      </ul>
+    </section>
 
-        <section class="section">
-            <div class="section-heading">
-                <span>03</span>
-                <h2>Decision audit trail</h2>
-            </div>
-            <div class="audit">
-                {% if result.cascade_used %}
-                <div class="cascade">
-                    Cascade · {{ result.cascade_used | join(" → ") }}
-                </div>
-                {% endif %}{{ result.reasoning }}
-            </div>
-        </section>
-
-        <div class="disclaimer">
-            <strong>Clinical use notice.</strong> This document provides
-            decision support and is not a diagnosis, prescription, or substitute
-            for examination by a qualified healthcare professional. Verify all
-            findings, contraindications, and next steps against the patient’s
-            full history and local clinical protocol.
-        </div>
-    </body>
+    <footer class="disclaimer">
+      Decision support only — not a diagnosis. A qualified clinician remains
+      responsible for every decision. Generated by MedRoute{% if generated_at %}
+      at {{ generated_at }}{% endif %}.
+    </footer>
+  </body>
 </html>
