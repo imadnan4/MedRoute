@@ -98,8 +98,8 @@ def infer_text(symptoms_and_context: str) -> str:
     lang_note = ""
     if _looks_like_roman_urdu(symptoms_and_context):
         lang_note = (
-            " The patient's family may write in Roman Urdu (e.g. 'meri mummy ko "
-            "dard hai'). Understand it, but write the assessment in English."
+            " The patient wrote in Roman Urdu; reply in clear Roman Urdu using "
+            "Latin letters only (never Urdu/Arabic script)."
         )
     system = SYSTEM_PROMPT + lang_note
     payload = _chat(system, f"Patient: {symptoms_and_context}", max_tokens=800)
