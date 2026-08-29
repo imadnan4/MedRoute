@@ -1,8 +1,8 @@
 """Groq-hosted LLM inference (free tier, no OpenRouter credits required).
 
-gpt-oss-120b on Groq supports strict `json_schema` response formatting, so the
-triage and intake prompts reuse the same schemas as the OpenRouter path. This
-keeps MedRoute fully functional without any paid API balance.
+We use JSON-object mode (``response_format: {type: "json_object"}``) so the same
+code works across free Groq models (Qwen, gpt-oss) without depending on strict
+``json_schema`` support. The expected field shapes are described in the prompts.
 """
 
 from __future__ import annotations
@@ -14,17 +14,26 @@ from typing import Any
 import requests
 
 from config import settings
-from pipeline.extraction.intake_extract import INTAKE_JSON_SCHEMA
 from agents.tools.openrouter_infer import (
     SYSTEM_PROMPT,
     INTAKE_SYSTEM_HOME_HEALTH,
     INTAKE_SYSTEM_LEGAL,
-    TRIAGE_JSON_SCHEMA,
 )
 
 log = logging.getLogger(__name__)
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+_JSON_OBJECT = {"type": "json_object"}
+
+INTAKE_SCHEMA_TEXT = (
+    "Respond with a single JSON object using exactly these keys "
+    "(use null for anything unstated): "
+    "contact_name (string), care_recipient_name (string), "
+    "phone_or_contact (string), care_need_summary (string), "
+    "condition_or_issue (string), mobility_or_severity_notes (string), "
+    "insurance_or_payment_notes (string), preferred_availability (string), "
+    "free_text_summary (string)."
+)
 
 
 def _looks_like_roman_urdu(text: str) -> bool:
@@ -54,7 +63,7 @@ def _unavailable(reason: str) -> str:
     )
 
 
-def _chat(system: str, user: str, response_format: dict, max_tokens: int):
+def _chat(system: str, user: str, max_tokens: int):
     if not settings.groq_api_key:
         return None
     body = {
@@ -63,7 +72,7 @@ def _chat(system: str, user: str, response_format: dict, max_tokens: int):
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "response_format": response_format,
+        "response_format": _JSON_OBJECT,
         "max_tokens": max_tokens,
         "temperature": 0.0,
     }
@@ -90,15 +99,10 @@ def infer_text(symptoms_and_context: str) -> str:
     if _looks_like_roman_urdu(symptoms_and_context):
         lang_note = (
             " The patient's family may write in Roman Urdu (e.g. 'meri mummy ko "
-            "dard hai'). Reason in English but keep recognising Roman Urdu terms."
+            "dard hai'). Understand it, but write the assessment in English."
         )
     system = SYSTEM_PROMPT + lang_note
-    payload = _chat(
-        system,
-        f"Patient: {symptoms_and_context}",
-        TRIAGE_JSON_SCHEMA,
-        max_tokens=800,
-    )
+    payload = _chat(system, f"Patient: {symptoms_and_context}", max_tokens=800)
     if payload is None:
         return _unavailable("groq_unreachable")
 
@@ -118,13 +122,14 @@ def infer_text(symptoms_and_context: str) -> str:
 
 
 def infer_intake(transcript: str, domain: str = "home_health") -> dict:
-    """Run intake extraction through Groq using the intake JSON schema."""
-    system = (
+    """Run intake extraction through Groq using JSON-object mode."""
+    base = (
         INTAKE_SYSTEM_LEGAL
         if (domain or "home_health") == "legal"
         else INTAKE_SYSTEM_HOME_HEALTH
     )
-    payload = _chat(system, transcript, INTAKE_JSON_SCHEMA, max_tokens=600)
+    system = base + " " + INTAKE_SCHEMA_TEXT
+    payload = _chat(system, transcript, max_tokens=600)
     if payload is None:
         return {}
     content = (

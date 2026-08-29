@@ -26,9 +26,9 @@ class Settings(BaseSettings):
 
     # — LLM provider selection: "openrouter" | "groq" (Groq is free, no credits)
     llm_provider: str = "groq"
-    # Groq-hosted LLM (free tier). gpt-oss-20b is language-stable and supports
-    # strict json_schema, so no OpenRouter credits are required.
-    groq_llm_model: str = "openai/gpt-oss-20b"
+    # Groq-hosted LLM (free tier). qwen/qwen3.8-27b is language-stable and works
+    # in JSON-object mode; no OpenRouter credits required.
+    groq_llm_model: str = "qwen/qwen3.8-27b"
 
     # — Optional remote ASR endpoint
     asr_server_url: str = ""
