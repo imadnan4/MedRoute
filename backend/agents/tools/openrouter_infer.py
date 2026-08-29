@@ -18,10 +18,9 @@ log = logging.getLogger(__name__)
 SYSTEM_PROMPT = """You are an expert medical diagnostician supporting primary-care triage
 in low-resource settings. This is decision support only; a clinician remains responsible.
 
-LANGUAGE RULE: Match the patient's language.
-- If the patient wrote in English, write every field in clear English.
-- If the patient wrote in Roman Urdu, reply in clear everyday Roman Urdu using Latin letters only (never Urdu/Arabic script), keeping medical terms understandable.
-Example (Roman Urdu input -> Roman Urdu output): likely_condition: "Mummy ko dehydration ya anaemia ki wajah se chakkar aur kamzori ho sakti hai".
+LANGUAGE RULE: Write every field in clear, professional English. You may read and
+understand Roman Urdu if the patient uses it, but always write the assessment in English.
+Example likely_condition (English only): "Possible dehydration or anaemia causing dizziness and weakness in an elderly patient".
 
 Return ONLY valid JSON matching this shape:
 {
