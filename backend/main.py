@@ -10,6 +10,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+
+logging.getLogger("main").warning("MEDROUTE_MAIN_MARKER_v3_loaded")
 import os
 import uuid
 from contextlib import asynccontextmanager
