@@ -1442,7 +1442,31 @@ h2 {
     .result-area-header {
         align-items: flex-start;
     }
-    .assessment-lead {
+.urgency-band {
+  border-radius: 9px;
+  padding: 14px 20px;
+  margin: 0 0 18px;
+  color: #fff;
+}
+.urgency-band .urgency-label {
+  display: block;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.urgency-band .urgency-sub {
+  display: block;
+  font-size: 12.5px;
+  opacity: 0.94;
+  margin-top: 2px;
+}
+.urgency-emergency { background: #9b1c1c; }
+.urgency-urgent { background: #b45309; }
+.urgency-soon { background: #9a7b17; }
+.urgency-routine { background: #2f6b3f; }
+
+.assessment-lead {
         grid-template-columns: 1fr;
         gap: 24px;
         min-height: 0;

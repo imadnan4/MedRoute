@@ -1,13 +1,18 @@
 import { useState } from "react";
 import { downloadReport } from "../api";
+import type { TriageResult } from "../types";
 
 interface ReportDownloadProps {
-  caseId: string;
+  result: TriageResult;
+  transcript?: string;
+  caseId?: string;
   disabled?: boolean;
 }
 
 export default function ReportDownload({
-  caseId,
+  result,
+  transcript = "",
+  caseId = "",
   disabled,
 }: ReportDownloadProps) {
   const [downloading, setDownloading] = useState(false);
@@ -17,7 +22,7 @@ export default function ReportDownload({
     setDownloading(true);
     setError("");
     try {
-      await downloadReport(caseId);
+      await downloadReport({ caseId, transcript, result });
     } catch {
       setError("The report could not be downloaded. Please try again.");
     } finally {

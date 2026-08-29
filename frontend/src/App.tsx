@@ -37,6 +37,7 @@ function App() {
   const [intakeResult, setIntakeResult] = useState<IntakeResponse | null>(null);
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [caseId, setCaseId] = useState("");
+  const [transcript, setTranscript] = useState("");
 
   async function handleSubmit(data: IntakeSubmitData) {
     setLoading(true);
@@ -63,6 +64,7 @@ function App() {
         setTriageResult(resp.result);
         setCaseId(resp.case_id);
       }
+      setTranscript(data.transcript);
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -298,7 +300,7 @@ function App() {
               </span>
             </div>
             <TriageResultView result={triageResult} />
-            <ReportDownload caseId={caseId} />
+            <ReportDownload result={triageResult} transcript={transcript} caseId={caseId} />
           </section>
         )}
       </main>

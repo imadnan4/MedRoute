@@ -93,14 +93,26 @@ export async function streamTriage(
   return finalResponse;
 }
 
-export async function downloadReport(caseId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/report/${caseId}`);
-  if (!res.ok) throw new Error("Report not found");
+export async function downloadReport(payload: {
+  caseId: string;
+  transcript: string;
+  result: unknown;
+}): Promise<void> {
+  const res = await fetch(`${API_BASE}/report`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      case_id: payload.caseId,
+      transcript: payload.transcript,
+      result: payload.result,
+    }),
+  });
+  if (!res.ok) throw new Error("Report generation failed");
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `medroute_triage_${caseId.slice(0, 8)}.pdf`;
+  a.download = `medroute_triage_${(payload.caseId || "report").slice(0, 8)}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

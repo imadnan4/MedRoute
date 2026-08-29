@@ -58,6 +58,7 @@ def test_custom_template_string_is_used() -> None:
 def test_default_loads_packaged_template() -> None:
     r = _sample_result()
     out = generate_html(r)
-    # The packaged template renders the confidence badge markup.
-    assert "confidence-box" in out
+    # The packaged template renders the structured triage report sections.
+    assert "urgency-band" in out
+    assert "Presenting complaint" in out
     assert "Viral upper respiratory infection" in out

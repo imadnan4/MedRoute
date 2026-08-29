@@ -4,6 +4,20 @@ interface TriageResultProps {
   result: TriageResult;
 }
 
+const URGENCY_LABEL: Record<string, string> = {
+  emergency: "Emergency — immediate assessment",
+  urgent: "Urgent — clinician review now",
+  soon: "Soon — within recommended window",
+  routine: "Routine — self-care or scheduled",
+};
+
+const DISPOSITION_ACTION: Record<string, string> = {
+  emergency: "Call emergency services / go to ED now",
+  urgent: "Priority clinician review — do not wait",
+  soon: "Book or attend within the recommended window",
+  routine: "Self-care with safety-netting, or routine appointment",
+};
+
 function formatValue(value: string) {
   return value.replace(/_/g, " ");
 }
@@ -17,6 +31,7 @@ function confidenceClass(level: string) {
 export default function TriageResultView({ result }: TriageResultProps) {
   const isRedFlag = result.route === "hard_escalation";
   const confidencePercent = Math.round(result.confidence * 100);
+  const urgency = (result.urgency || "soon").toLowerCase();
 
   return (
     <article className={`triage-result ${isRedFlag ? "has-red-flag" : ""}`}>
@@ -48,6 +63,13 @@ export default function TriageResultView({ result }: TriageResultProps) {
           </div>
         </div>
       )}
+
+      <div className={`urgency-band urgency-${urgency}`}>
+        <span className="urgency-label">{URGENCY_LABEL[urgency] || urgency}</span>
+        <span className="urgency-sub">
+          Recommended action: {DISPOSITION_ACTION[urgency] || ""}
+        </span>
+      </div>
 
       <div className="assessment-lead">
         <div>

@@ -402,6 +402,36 @@ async def get_report(case_id: str):
     )
 
 
+class ReportRequest(BaseModel):
+    case_id: str = ""
+    transcript: str = ""
+    generated_at: str = ""
+    result: TriageResult
+
+
+@app.post("/report")
+async def post_report(body: ReportRequest):
+    """Generate a PDF report directly from a triage result.
+
+    The frontend already holds the full result, so this avoids any dependency on
+    the in-memory case store (which is cleared on every dyno restart/deploy).
+    """
+    pdf = generate_pdf(
+        body.result,
+        transcript=body.transcript,
+        case_id=body.case_id,
+        generated_at=body.generated_at,
+    )
+    safe_id = (body.case_id or "report").replace("/", "_")[:12]
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=medroute_triage_{safe_id}.pdf"
+        },
+    )
+
+
 @app.get("/health")
 async def health():
     return {
