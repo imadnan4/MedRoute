@@ -346,9 +346,9 @@ def run_triage(
         ).strip()
 
     reasoning = (
-        f"scorer: {score.reasoning}; "
-        f"cascade: {' → '.join(cascade)}; "
-        f"fused_confidence={fused:.2f}"
+        f"Complexity scorer confidence {score.confidence:.2f}"
+        + ("; escalation bias applied" if score.escalation_bias_applied else "")
+        + f". Cascade: {' → '.join(cascade)}."
     )
 
     return TriageResult(

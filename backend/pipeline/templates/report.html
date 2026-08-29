@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>MedRoute Clinical Triage Report</title>
+    <title>MedRoute Clinical Triage &amp; Handoff Note</title>
     <style>
       @page {
         size: A4;
@@ -52,15 +52,8 @@
         padding-bottom: 7px;
         margin-bottom: 11px;
       }
-      .brand-header .brand {
-        font-weight: 700;
-        font-size: 14pt;
-        letter-spacing: 0.01em;
-      }
-      .brand-header .doc-title {
-        font-size: 9.5pt;
-        color: #4a4f4a;
-      }
+      .brand-header .brand { font-weight: 700; font-size: 14pt; letter-spacing: 0.01em; }
+      .brand-header .doc-title { font-size: 9.5pt; color: #4a4f4a; }
       .brand-header .meta {
         font-family: "DejaVu Sans Mono", monospace;
         font-size: 7.2pt;
@@ -77,18 +70,8 @@
       .urgency-urgent { background: #b45309; }
       .urgency-soon { background: #9a7b17; }
       .urgency-routine { background: #2f6b3f; }
-      .urgency-band .urgency-label {
-        display: block;
-        font-weight: 700;
-        font-size: 11pt;
-        letter-spacing: 0.01em;
-      }
-      .urgency-band .urgency-sub {
-        display: block;
-        font-size: 8.6pt;
-        opacity: 0.95;
-        margin-top: 1px;
-      }
+      .urgency-band .urgency-label { display: block; font-weight: 700; font-size: 11pt; letter-spacing: 0.01em; }
+      .urgency-band .urgency-sub { display: block; font-size: 8.6pt; opacity: 0.95; margin-top: 1px; }
       .alert-banner {
         background: #fbe9e7;
         border: 1px solid #c0392b;
@@ -108,6 +91,13 @@
         padding-bottom: 3px;
         margin-bottom: 5px;
       }
+      .sbar-tag {
+        font-family: "DejaVu Sans Mono", monospace;
+        font-size: 7pt;
+        font-weight: 700;
+        color: #294d3e;
+        margin-right: 6px;
+      }
       .quote {
         background: #f5f6f3;
         border-left: 3px solid #c9cdc4;
@@ -116,11 +106,7 @@
         color: #3a3f3a;
         white-space: pre-wrap;
       }
-      table.snapshot {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 8.8pt;
-      }
+      table.snapshot { width: 100%; border-collapse: collapse; font-size: 8.8pt; }
       table.snapshot td {
         padding: 3px 8px;
         border: 1px solid #e2e5df;
@@ -134,11 +120,7 @@
       }
       ul { padding-left: 16px; }
       li { margin-bottom: 2px; }
-      .reasoning {
-        margin-top: 4px;
-        color: #4a4f4a;
-        font-size: 8.8pt;
-      }
+      .reasoning { margin-top: 4px; color: #4a4f4a; font-size: 8.8pt; }
       .badge {
         display: inline-block;
         font-size: 7pt;
@@ -166,7 +148,7 @@
     <header class="brand-header">
       <div>
         <span class="brand">MedRoute</span>
-        <span class="doc-title">&nbsp;· Clinical Triage &amp; Handoff Report</span>
+        <span class="doc-title">&nbsp;· Clinical Triage &amp; Handoff Note</span>
       </div>
       <div class="meta">
         Case {{ case_id or "—" }}<br />
@@ -186,14 +168,14 @@
     {% endif %}
 
     <section>
-      <h2>1 · Presenting complaint</h2>
+      <h2><span class="sbar-tag">S</span>Situation — patient's stated complaint</h2>
       <p class="quote">{{ transcript or "(not recorded)" }}</p>
     </section>
 
     <section>
-      <h2>2 · Patient snapshot</h2>
+      <h2><span class="sbar-tag">B</span>Background — patient snapshot</h2>
       <table class="snapshot">
-        <tr><td class="k">Age / pregnancy</td><td>{{ patient.age_for_display }}{% if patient.pregnancy %} · {{ patient.pregnancy }}{% endif %}</td></tr>
+        <tr><td class="k">Age / pregnancy</td><td>{{ patient.age_for_display }}{% if patient.pregnancy %} · {{ patient.pregnancy.value }}{% endif %}</td></tr>
         <tr><td class="k">Duration of symptoms</td><td>{{ patient.duration_days if patient.duration_days is not none else "not stated" }}{% if patient.duration_days is not none %} day(s){% endif %}</td></tr>
         <tr><td class="k">Triage confidence</td><td>{{ result.confidence_level.value }} <span class="badge {{ badge_class }}">{{ "%.0f"|format(result.confidence*100) }}%</span></td></tr>
         <tr><td class="k">Escalate to clinician</td><td>{% if is_red_flag %}YES{% else %}No{% endif %}</td></tr>
@@ -201,7 +183,7 @@
     </section>
 
     <section>
-      <h2>3 · Clinical assessment</h2>
+      <h2><span class="sbar-tag">A</span>Assessment</h2>
       <p><strong>Likely condition:</strong> {{ result.likely_condition }}</p>
       {% if result.differential %}
       <p><strong>Differential:</strong></p>
@@ -209,18 +191,16 @@
         {% for d in result.differential %}<li>{{ d }}</li>{% endfor %}
       </ul>
       {% endif %}
-      {% if result.reasoning %}
-      <p class="reasoning">{{ result.reasoning }}</p>
-      {% endif %}
+      <p class="reasoning"><strong>Red-flag status:</strong> {{ "Triggered — " ~ red_flag_message if result.red_flag and result.red_flag.triggered else "None identified" }}</p>
     </section>
 
     <section>
-      <h2>4 · Recommended action (plan)</h2>
+      <h2><span class="sbar-tag">R</span>Recommendation (plan)</h2>
       <p>{{ result.recommendation }}</p>
     </section>
 
     <section>
-      <h2>5 · Safety-netting &amp; warning signs</h2>
+      <h2>Safety-netting &amp; warning signs</h2>
       {% if result.watch_for %}
       <ul>
         {% for w in result.watch_for %}<li>{{ w }}</li>{% endfor %}
@@ -231,10 +211,12 @@
     </section>
 
     <section>
-      <h2>6 · Decision-support audit trail</h2>
+      <h2>Decision-support audit trail</h2>
       <ul class="evi">
         <li>Model confidence: {{ result.model_confidence if result.model_confidence is not none else "—" }}</li>
         <li>Scorer confidence: {{ result.scorer_confidence if result.scorer_confidence is not none else "—" }}</li>
+        <li>Escalation bias applied: {% if result.route.value == "escalation_bias" %}Yes{% else %}No{% endif %}</li>
+        <li>Route: {{ result.route.value | replace("_", " ") }}</li>
         <li>Cascade used: {{ result.cascade_used|join(", ") if result.cascade_used else "—" }}</li>
         {% if red_flag_matched %}
         <li>Red-flag matches: {{ red_flag_matched|join(", ") }}</li>

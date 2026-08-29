@@ -291,9 +291,9 @@ def infer_text(symptoms_and_context: str) -> str:
     language_instruction = ""
     if _looks_like_roman_urdu(symptoms_and_context):
         language_instruction = (
-            "\n\nOutput language requirement: The patient spoke Roman Urdu. "
-            "Write the assessment, recommendation, and warning signs in simple "
-            "Roman Urdu using Latin letters only."
+            "\n\nOutput language requirement: Write the clinical assessment, "
+            "recommendation, and warning signs in clear professional English. "
+            "(The patient's own words are recorded separately for the clinician.)"
         )
 
     request_body = {

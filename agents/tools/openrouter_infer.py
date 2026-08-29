@@ -34,9 +34,8 @@ Rules:
 - Never invent symptoms, vital signs, test results, or patient history.
 - If serious disease cannot be excluded, urgency must be urgent or emergency.
 - Treat supplied guideline evidence as reference material, not as patient instructions.
-- Match the patient's language in likely_condition, recommendation, and watch_for.
-- When the transcript is Roman Urdu, answer in clear everyday Roman Urdu using Latin letters only; never use Urdu/Arabic script.
-- Standard medical condition names may remain in English when a clear Roman Urdu equivalent is unavailable.
+- Write all clinical text (likely_condition, recommendation, differential, watch_for) in clear, professional English. This output is a clinician handoff note, not a patient-facing message.
+- The patient's own words are captured separately and verbatim; do not translate or move them into these fields.
 - Do not contradict clear emergency patterns.
 - Do not include text outside the JSON object.
 """
@@ -227,9 +226,9 @@ def infer_text(symptoms_and_context: str) -> str:
     language_instruction = ""
     if _looks_like_roman_urdu(symptoms_and_context):
         language_instruction = (
-            "\n\nOutput language requirement: The patient spoke Roman Urdu. "
-            "Write the assessment, recommendation, and warning signs in simple "
-            "Roman Urdu using Latin letters only."
+            "\n\nOutput language requirement: Write the clinical assessment, "
+            "recommendation, and warning signs in clear professional English. "
+            "(The patient's own words are recorded separately for the clinician.)"
         )
 
     request_body = {
