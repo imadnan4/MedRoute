@@ -5,8 +5,18 @@ import type {
   TriageRequest,
   TriageResponse,
 } from "./types";
+import { getAuthToken } from "./auth";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+async function authHeaders(contentType = false): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  if (!token) throw new Error("Please sign in before using MedRoute.");
+  return {
+    ...(contentType ? { "Content-Type": "application/json" } : {}),
+    Authorization: `Bearer ${token}`,
+  };
+}
 
 export async function transcribeAudio(
   audioB64: string,
@@ -14,7 +24,7 @@ export async function transcribeAudio(
 ): Promise<string> {
   const res = await fetch(`${API_BASE}/transcribe`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders(true),
     // Clinic: Urdu first, then English only
     body: JSON.stringify({ audio_b64: audioB64, language: language || "ur" }),
   });
@@ -42,7 +52,7 @@ export async function streamTriage(
   const response = await fetch(
     `${API_BASE}/triage/stream?${params.toString()}`,
     {
-      headers: { Accept: "text/event-stream" },
+      headers: { ...(await authHeaders()), Accept: "text/event-stream" },
     },
   );
   if (!response.ok || !response.body) {
@@ -100,7 +110,7 @@ export async function downloadReport(payload: {
 }): Promise<void> {
   const res = await fetch(`${API_BASE}/report`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders(true),
     body: JSON.stringify({
       case_id: payload.caseId,
       transcript: payload.transcript,
@@ -129,7 +139,7 @@ export async function postEncounter(
 ): Promise<EncounterResponse> {
   const res = await fetch(`${API_BASE}/encounter`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders(true),
     body: JSON.stringify(req),
   });
   if (!res.ok) {

@@ -441,16 +441,52 @@ git subtree push --prefix backend heroku main
 
 > **ASR note:** hosted ASR uses **Groq Whisper** (`MEDROUTE_ASR_MODE=groq`), which needs `MEDROUTE_GROQ_API_KEY`, because Heroku has no GPU. Set `MEDROUTE_ASR_MODE=groq` so transcription runs without a cached local model.
 
-### Frontend → Vercel
+### Frontend → Netlify
 
-The frontend has `frontend/vercel.json` (framework `vite`, build `npm run build`, output `dist`). Import the repo in Vercel and set:
+The frontend is deployed at `https://your-production-frontend.example.com`. Set these
+production environment variables in the Netlify site settings:
 
-- **Root Directory:** `frontend`
-- **Build Command:** `npm run build`
-- **Output Directory:** `dist`
-- **Environment Variable:** `VITE_API_URL` = your Heroku backend URL (e.g. `https://medroute-app.herokuapp.com`)
+- `VITE_API_URL` = `https://medroute-api.herokuapp.com`
+- `VITE_NEON_AUTH_URL` = the Neon Auth URL from `frontend/.env.example`
+
+For a manual site configuration, use `frontend` as the base directory, run
+`npm run build`, and publish `dist`.
 
 `VITE_API_URL` is read in `frontend/src/api.ts` (`import.meta.env.VITE_API_URL`). Without it, the UI falls back to `http://localhost:8000`.
+
+### Neon Auth and durable storage
+
+MedRoute uses Neon Auth (managed Better Auth) for browser sign-in and stores each
+Encounter, its structured result, submitted audio, and generated PDF in Neon
+Postgres. The FastAPI API accepts only Neon Auth JWTs and scopes every stored
+Encounter by the JWT `sub` claim.
+
+1. Enable Neon Auth for the database branch and add the deployed frontend URL to
+   Neon Auth's trusted origins.
+2. Copy the environment templates and set:
+
+   ```bash
+   cp .env.example .env
+   cp frontend/.env.example frontend/.env.local
+   ```
+
+   Set `MEDROUTE_DATABASE_URL` to the pooled connection URL for the API,
+   `MEDROUTE_DATABASE_URL_UNPOOLED` to the direct URL for migrations,
+   `MEDROUTE_AUTH_JWKS_URL` to the branch JWKS URL, and
+   `VITE_NEON_AUTH_URL` to the branch Auth URL. Do not commit either env file.
+
+3. Apply the checked-in schema with the direct URL:
+
+   ```bash
+   MEDROUTE_DATABASE_URL_UNPOOLED="...direct Neon URL..." \
+     ./.venv/bin/python scripts/migrate_neon.py
+   ```
+
+Neon Auth owns its `neon_auth` schema; `migrations/001_medroute_encounters.sql`
+only creates the application table. The API deliberately uses server-side SQL
+instead of the optional Neon Data API because this app already has a FastAPI
+backend and needs to persist binary report/audio data in the same Postgres
+transaction boundary.
 
 ### Required environment variables (real names from `backend/config.py`)
 
@@ -461,8 +497,12 @@ The frontend has `frontend/vercel.json` (framework `vite`, build `npm run build`
 | `MEDROUTE_GROQ_API_KEY` | Yes (when `asr_mode=groq`) | Groq API key for hosted Whisper ASR |
 | `MEDROUTE_ICD_API_KEY` | Optional | WHO ICD-11 RAG corpus loading |
 | `MEDROUTE_OPENROUTER_MODEL` | No (default `openrouter/free`) | OpenRouter model ID |
+| `MEDROUTE_DATABASE_URL` | Yes | Pooled Neon Postgres URL for API traffic |
+| `MEDROUTE_DATABASE_URL_UNPOOLED` | Yes for migrations | Direct Neon Postgres URL |
+| `MEDROUTE_AUTH_JWKS_URL` | Yes | Neon Auth JWKS endpoint used to verify bearer tokens |
+| `MEDROUTE_CORS_ORIGINS` | Yes in deployment | Comma-separated frontend origins |
 
-Never commit `backend/.env` or any secret. Use `heroku config:set` / Vercel env vars instead.
+Never commit `backend/.env` or any secret. Use `heroku config:set` / Netlify environment variables instead.
 
 ## License
 

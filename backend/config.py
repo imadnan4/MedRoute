@@ -73,9 +73,21 @@ class Settings(BaseSettings):
     icd_api_base: str = "https://id.who.int/icd"
     icd_api_key: str = ""
 
+    # — Persistence and authentication
+    database_url: str = ""
+    database_url_unpooled: str = ""
+    auth_jwks_url: str = ""
+    auth_issuer: str = ""
+    auth_audience: str = ""
+    cors_origins: str = "http://localhost:5173"
+
     # — Server
     host: str = "0.0.0.0"
     port: int = 8000
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 settings = Settings()

@@ -16,6 +16,9 @@ langchain-community==0.3.14
 # HTTP calls to OpenRouter + Groq ASR
 requests==2.32.3
 httpx==0.28.1
+PyJWT==2.10.1
+cryptography==44.0.3
+psycopg[binary]==3.2.3
 numpy==1.26.4
 
 # Report generation (system libs provided by Aptfile)

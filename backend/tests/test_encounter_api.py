@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 import main
+from auth import AuthenticatedUser, get_current_user
 from models import Acuity, Disposition, TriageRoute
 from pipeline.triage_pipeline import _disposition_from_route
 
@@ -44,7 +45,12 @@ def client(monkeypatch):
     monkeypatch.setattr(main._pipeline, "_run_triage", _fake_run_triage)
     # Intake mode reads the adapter injected into the pipeline.
     main._pipeline._inference = InMemoryInfer(CANNED_INTAKE)
-    return TestClient(main.app)
+    main.app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        user_id="offline-test-user", claims={"sub": "offline-test-user"}
+    )
+    client = TestClient(main.app)
+    yield client
+    main.app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_encounter_intake_returns_disposition_and_mode(client) -> None:

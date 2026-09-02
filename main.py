@@ -24,7 +24,7 @@ from config import settings
 # huggingface_hub, chromadb embedding functions) can use it for model downloads.
 if settings.hf_token and not os.environ.get("HF_TOKEN"):
     os.environ["HF_TOKEN"] = settings.hf_token
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,14 +38,16 @@ from rag.retriever import get_or_create_collection
 from safety.red_flag_checker import check_red_flags
 from safety.distress_checker import check_distress
 from voice.transcriber import Transcript, transcriber
+from auth import AuthenticatedUser, get_current_user
+from storage import EncounterStore, create_encounter_store
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # ------------------------------------------------------------------ #
-# In-memory store (hackathon — no DB)
+# Durable Neon store, with an in-memory fallback for offline tests.
 # ------------------------------------------------------------------ #
-_triage_store: dict[str, dict] = {}
+_encounter_store: EncounterStore = create_encounter_store()
 
 
 # ------------------------------------------------------------------ #
@@ -110,7 +112,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -206,28 +208,40 @@ def _build_triage_store(req: object, case_id: str, on_stage=None) -> dict:
     result_obj = TriageResult(**store_entry["result"])
     pdf_bytes = generate_pdf(result_obj)
     store_entry["pdf_bytes"] = pdf_bytes
-    store_entry.pop("pdf_bytes", None)
     return store_entry
+
+
+def _public_store_entry(entry: dict) -> dict:
+    public_entry = {key: value for key, value in entry.items() if key != "pdf_bytes"}
+    if isinstance(public_entry.get("request"), dict):
+        public_entry["request"] = {
+            key: value for key, value in public_entry["request"].items() if key != "audio_b64"
+        }
+    return public_entry
+
+
+def _save_entry(entry: dict, user: AuthenticatedUser) -> None:
+    _encounter_store.save(entry, user.user_id)
 
 
 # ------------------------------------------------------------------ #
 # REST Endpoints
 # ------------------------------------------------------------------ #
 @app.post("/triage")
-async def triage_post(req: TriageRequest):
+async def triage_post(req: TriageRequest, user: AuthenticatedUser = Depends(get_current_user)):
     """Run the full triage pipeline and return structured result."""
     case_id = str(uuid.uuid4())
     try:
         store_entry = _build_triage_store(req, case_id)
-        _triage_store[case_id] = store_entry
-        return JSONResponse(content=store_entry, status_code=200)
+        _save_entry(store_entry, user)
+        return JSONResponse(content=_public_store_entry(store_entry), status_code=200)
     except Exception as exc:
         log.exception("Pipeline error for case %s", case_id)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/encounter")
-async def encounter_post(req: EncounterRequest):
+async def encounter_post(req: EncounterRequest, user: AuthenticatedUser = Depends(get_current_user)):
     """Unified first-contact endpoint: runs intake OR triage by ``mode``.
 
     Accepts the same request shape as ``/triage`` (text or base64 audio) plus a
@@ -240,19 +254,21 @@ async def encounter_post(req: EncounterRequest):
         if req.mode == "intake":
             encounter = _pipeline.run(req, case_id, mode="intake", domain=req.domain)
             body = _encounter_to_dict(encounter)
-            _triage_store[case_id] = {
+            store_entry = {
                 "case_id": case_id,
+                "mode": "intake",
                 "request": req.model_dump(),
                 "stages": {},
                 "result": body,
                 "pdf_bytes": None,
             }
+            _save_entry(store_entry, user)
             return JSONResponse(content=body, status_code=200)
 
         store_entry = _build_triage_store(req, case_id)
         store_entry["mode"] = "triage"
-        _triage_store[case_id] = store_entry
-        return JSONResponse(content=store_entry, status_code=200)
+        _save_entry(store_entry, user)
+        return JSONResponse(content=_public_store_entry(store_entry), status_code=200)
     except Exception as exc:
         log.exception("Pipeline error for case %s", case_id)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -265,6 +281,7 @@ async def triage_stream(
     age_years: Optional[float] = Query(None),
     age_months: Optional[float] = Query(None),
     pregnancy: Optional[str] = Query(None),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     """SSE endpoint that streams pipeline stage events as they complete."""
 
@@ -287,13 +304,14 @@ async def triage_stream(
             outcome = _pipeline.run(req, case_id, on_stage=_on_stage)
 
             # Persist for PDF download (SSE path historically stored no stages)
-            _triage_store[case_id] = {
+            store_entry = {
                 "case_id": case_id,
                 "request": req.model_dump(),
                 "stages": {},
                 "result": outcome.result.model_dump(),
                 "pdf_bytes": None,
             }
+            _save_entry(store_entry, user)
         except Exception as exc:
             events.append(_emit("error", "error", {"message": str(exc)}))
 
@@ -322,6 +340,7 @@ async def encounter_stream(
     domain: Literal["home_health", "legal"] = Query(
         "home_health", description="Intake variant: home_health | legal"
     ),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     """SSE endpoint mirroring ``/triage/stream`` but with a ``mode`` selector."""
 
@@ -347,22 +366,24 @@ async def encounter_stream(
                 encounter = _pipeline.run(
                     req, case_id, mode="intake", on_stage=_on_stage, domain=domain
                 )
-                _triage_store[case_id] = {
+                store_entry = {
                     "case_id": case_id,
                     "request": req.model_dump(),
                     "stages": {},
                     "result": _encounter_to_dict(encounter),
                     "pdf_bytes": None,
                 }
+                _save_entry(store_entry, user)
             else:
                 outcome = _pipeline.run(req, case_id, mode="triage", on_stage=_on_stage)
-                _triage_store[case_id] = {
+                store_entry = {
                     "case_id": case_id,
                     "request": req.model_dump(),
                     "stages": {},
                     "result": outcome.result.model_dump(),
                     "pdf_bytes": None,
                 }
+                _save_entry(store_entry, user)
         except Exception as exc:
             events.append(_emit("error", "error", {"message": str(exc)}))
 
@@ -381,9 +402,9 @@ async def encounter_stream(
 
 
 @app.get("/report/{case_id}")
-async def get_report(case_id: str):
+async def get_report(case_id: str, user: AuthenticatedUser = Depends(get_current_user)):
     """Download a PDF report for a previously run triage."""
-    entry = _triage_store.get(case_id)
+    entry = _encounter_store.get(case_id, user.user_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Case not found")
 
@@ -410,7 +431,10 @@ class ReportRequest(BaseModel):
 
 
 @app.post("/report")
-async def post_report(body: ReportRequest):
+async def post_report(
+    body: ReportRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
     """Generate a PDF report directly from a triage result.
 
     The frontend already holds the full result, so this avoids any dependency on
@@ -451,7 +475,10 @@ class TranscribeRequest(BaseModel):
 
 
 @app.post("/transcribe")
-async def transcribe_audio(req: TranscribeRequest):
+async def transcribe_audio(
+    req: TranscribeRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
     """Transcribe audio via local Whisper (preferred) or a remote ASR server."""
     try:
         audio_bytes = base64.b64decode(req.audio_b64)

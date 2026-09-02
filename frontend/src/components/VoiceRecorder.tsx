@@ -65,6 +65,7 @@ export default function VoiceRecorder({
   const [textInput, setTextInput] = useState("");
   const [ageInput, setAgeInput] = useState("");
   const [pregnancyInput, setPregnancyInput] = useState("not_pregnant");
+  const [audioBase64, setAudioBase64] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
 
   const streamRef = useRef<MediaStream | null>(null);
@@ -76,6 +77,7 @@ export default function VoiceRecorder({
 
   async function startRecording() {
     setFeedback("");
+    setAudioBase64(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -169,7 +171,8 @@ export default function VoiceRecorder({
       // Preserve the browser's native sample rate; Whisper's decoder performs
       // higher-quality resampling than a simple client-side interpolation.
       const wav = encodeWav(merged, nativeRate);
-      const transcript = await transcribeAudio(await blobToBase64(wav), "ur");
+      const encodedAudio = await blobToBase64(wav);
+      const transcript = await transcribeAudio(encodedAudio, "ur");
       if (!transcript?.trim()) {
         setFeedback(
           "No speech was detected. Try again or type the symptoms below.",
@@ -177,6 +180,7 @@ export default function VoiceRecorder({
         return;
       }
       setTextInput(transcript);
+      setAudioBase64(encodedAudio);
       setFeedback(
         "Voice transcription is ready. Review it before running triage.",
       );
@@ -196,6 +200,7 @@ export default function VoiceRecorder({
     const ageMonths = ageInput ? null : null;
     onSubmit({
       transcript: textInput.trim(),
+      audio_b64: audioBase64,
       age_years: Number.isFinite(ageYears) ? Number(ageYears) : null,
       age_months: ageMonths,
       pregnancy: pregnancyInput === "not_pregnant" ? null : pregnancyInput,

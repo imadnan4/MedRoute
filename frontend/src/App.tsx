@@ -47,6 +47,7 @@ function App() {
 
     const request = {
       transcript: data.transcript,
+      audio_b64: data.audio_b64,
       language: "en",
       age_years: data.age_years,
       age_months: data.age_months,

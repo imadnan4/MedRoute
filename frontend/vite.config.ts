@@ -10,6 +10,7 @@ export default defineConfig({
       '/transcribe': 'http://localhost:8000',
       '/report': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
+      '/encounter': 'http://localhost:8000',
     },
   },
 })

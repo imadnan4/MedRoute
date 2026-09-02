@@ -11,7 +11,7 @@ export interface TriageRequest {
 
 export interface EncounterRequest {
   transcript: string | null;
-  audio_base64?: string | null;
+  audio_b64?: string | null;
   language?: string | null;
   age_years?: number | null;
   age_months?: number | null;
@@ -23,6 +23,7 @@ export interface EncounterRequest {
 /** Data assembled by the input form and handed to the submit handler. */
 export interface IntakeSubmitData {
   transcript: string;
+  audio_b64?: string | null;
   age_years: number | null;
   age_months: number | null;
   pregnancy: string | null;
