@@ -11,3 +11,11 @@ const neonAuth = createInternalNeonAuth(authUrl, {
 export const authClient = neonAuth.adapter;
 export const getAuthToken = neonAuth.getJWTToken;
 export const isAuthConfigured = Boolean(import.meta.env.VITE_NEON_AUTH_URL);
+
+// @neondatabase/auth 0.5.0-beta infers the React adapter's useSession member
+// as an atom even though the runtime React client exposes useSession() as a
+// hook. Keep that package typing mismatch isolated at this integration seam.
+export const useAuthSession = authClient.useSession as unknown as () => {
+  data: { user: { name?: string | null; email?: string | null } } | null;
+  isPending: boolean;
+};

@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useStore } from "@neondatabase/auth/react";
-import { authClient, isAuthConfigured } from "../auth";
+import { authClient, isAuthConfigured, useAuthSession } from "../auth";
 
 interface AuthGateProps {
   children: ReactNode;
@@ -55,7 +54,7 @@ function AuthForm() {
 }
 
 export default function AuthGate({ children }: AuthGateProps) {
-  const session = useStore(authClient.useSession);
+  const session = useAuthSession();
 
   if (!isAuthConfigured) {
     return (
