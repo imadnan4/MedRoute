@@ -446,7 +446,7 @@ git subtree push --prefix backend heroku main
 The frontend is deployed at `https://your-production-frontend.example.com`. Set these
 production environment variables in the Netlify site settings:
 
-- `VITE_API_URL` = `https://medroute-api.herokuapp.com`
+- `VITE_API_URL` = `https://your-production-api.example.com`
 - `VITE_NEON_AUTH_URL` = the Neon Auth URL from `frontend/.env.example`
 
 For a manual site configuration, use `frontend` as the base directory, run
